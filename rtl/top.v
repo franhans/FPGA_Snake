@@ -1,5 +1,5 @@
 `default_nettype none   
-`define __ICARUS__ 0
+//`define __ICARUS__ 0
 
 module top (
     input wire clk,	      // 25MHz clock input
@@ -27,15 +27,14 @@ module top (
     localparam Ncol=Vwidth/Cwidth;
     localparam Nrow=Vheight/Cheight;
 
-    localparam pixels_segundo = 100;
-    localparam limiteContador = 31000000/pixels_segundo;
-
-    localparam squareSize = 50;
 
     localparam right = 2'b00;
     localparam left  = 2'b01;
     localparam up    = 2'b10;
     localparam down  = 2'b11;    
+
+
+    localparam maxTwists = 20;
 
 //--------------------
 //IO pins assigments
@@ -144,25 +143,26 @@ module top (
     //--------------------------------------------------------------------------------------
     //    Register with positions and directions of the different segments of the snake
     //--------------------------------------------------------------------------------------
-    reg [21:0] segmentsReg [0:70];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
+    reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
     reg [0:70] isEmpty;
     reg [8:0]  lastValidReg; 
     
-    integer i = 0;
+    integer i;
+    integer j;
     //Register is initialized to 0
     initial begin
-	for (i = 0; i <= 70 ; i = i + 1)
+	for (i = 0; i <= maxTwists ; i = i + 1)
 		segmentsReg[i] <= 21'b000000000000000000000;
     end
     
     //which one is the last register with a value different than 0.
-    integer j = 0;
+    
     always @(*) begin
-	for (i = 0; i <= 70 ; i = i + 1) begin
+	for (i = 0; i <= maxTwists ; i = i + 1) begin
 		isEmpty[i] <= |segmentsReg[i];
 	end
 	lastValidReg = 0;
-	for (j = 0; j <= 70 ; j = j + 1) begin
+	for (j = 0; j <= maxTwists ; j = j + 1) begin
 		if (isEmpty[j])
 			lastValidReg = lastValidReg + 1;
 	end
@@ -172,8 +172,10 @@ module top (
 
     always @(posedge clk) begin
     	if (!rstn) begin
-		for (i = 0; i <= 70 ; i = i + 1)
+		for (i = 0; i <= maxTwists ; i = i + 1)
 			segmentsReg[i] <= 21'b000000000000000000000;
+		finalDir <= 2'b00;
+    		beginDir <= 2'b00;
 	end
 	else begin 
 		//if ((wr_f && (regData >= 65 || regData <= 68)) || (!lastValidReg[8] && (finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]))) begin
@@ -204,8 +206,9 @@ module top (
 					segmentsReg [0] <= {beginY, beginX, left};
 					beginDir <= left;
 					end
+					default: beginDir <= beginDir;
 				endcase
-				for (i = 1; i <= 70; i = i + 1) 
+				for (i = 1; i <= maxTwists; i = i + 1) 
 					segmentsReg[i] <= segmentsReg[i-1];
 			end 
 		//end else
@@ -229,8 +232,6 @@ module top (
     		finalX <= 100;
     		beginY <= 200;
     		finalY <= 200;
-    		finalDir <= 2'b00;
-    		beginDir <= 2'b00;
 	end 
 	else begin
 		if (updateSnakePosition) begin
@@ -252,56 +253,61 @@ module top (
     end
 	
    
-   /* 
+    reg [2:0] draw_collision;
+    always @(*) begin
+	draw_collision = 0;
+	if (!lastValidReg[8]) begin
+		case (finalDir)
+	   	  2'b00: if (x_px > finalX - 8 && x_px < segmentsReg[lastValidReg][11:2] + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
+	  	  2'b01: if (x_px > segmentsReg[lastValidReg][11:2] - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
+	  	  2'b10: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > segmentsReg[lastValidReg][21:12] - 8)  draw_collision = draw_collision + 1;
+         	  2'b11: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < segmentsReg[lastValidReg][21:12] + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
+		endcase
+		for (i = maxTwists; i > 0; i = i - 1) begin
+			if (isEmpty[i]) begin
+				case (segmentsReg[i][1:0])
+	   	  		  2'b00: if (x_px > segmentsReg[i][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;   
+	  	  		  2'b01: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;
+	  	  		  2'b10: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i][21:12] + 8 && y_px > segmentsReg[i-1][21:12] - 8)  draw_collision = draw_collision + 1;
+         	  		  2'b11: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i-1][21:12] + 8 && y_px > segmentsReg[i][21:12] - 8)  draw_collision = draw_collision + 1;
+				endcase
+			end
+		end
+		case (beginDir)
+	   	  2'b00: if (x_px > segmentsReg[0][11:2] - 8 && x_px < beginX + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;   
+	  	  2'b01: if (x_px > beginX - 8 && x_px < segmentsReg[0][11:2] + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;
+	  	  2'b10: if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < segmentsReg[0][21:12] + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
+         	  2'b11: if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < beginY + 8 && y_px > segmentsReg[0][21:12] - 8)  draw_collision = draw_collision + 1;
+		endcase
+	end
+	else begin
+		case (finalDir)
+	   	  2'b00: if (x_px > finalX - 8 && x_px < beginX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
+	  	  2'b01: if (x_px > beginX - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
+	  	  2'b10: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
+         	  2'b11: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < beginY + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
+		endcase
+	end
 
-    reg [18:0] contador = 0;
-    wire [9:0] HposSquare_n;
-    wire [9:0] VposSquare_n;
-
-    
-    
+    end 
 
     //Update next pixel color
     always @(posedge px_clk) begin
-        if (!rstn) begin
+        if (!rstn) begin 
                 R_int <= 4'b0;
                 G_int <= 4'b0;
                 B_int <= 4'b0;
-		HposSquare <= 0;
-		contador <= 0;
         end else
         if (activevideo) begin
-
-		if ((x_px >= HposSquare) && (x_px < HposSquare + squareSize) && (y_px >= VposSquare) && (y_px < VposSquare + squareSize))
-			R_int <= 4'b1000;
-		else
-			R_int <= 4'b0000;
-
-                //contador
-		contador <= (contador == limiteContador) ? 0 : contador + 1;
-		if (contador == limiteContador) begin
-			HposSquare <= HposSquare_n;
-			VposSquare <= VposSquare_n;
-		end
-		else begin
-			HposSquare <= HposSquare;
-			VposSquare <= VposSquare;
-		end
+		if (draw_collision > 0)  //Esto no deberia ser asi
+			G_int <= 4'b1000;
+		else 
+			G_int <= 4'b0000;
        	end
     end
 
-    assign HposSquare_n = HposSquare + Hmovement;
-    assign VposSquare_n = VposSquare + Vmovement;
 
 
-    assign Hmovement = (regData == 32) ? 0:
-		       (regData == 67) ? 1:
-		       (regData == 68) ? -1 : 0;
-   
-    assign Vmovement = (regData == 32) ? 0:
-		       (regData == 66) ? 1:
-		       (regData == 65) ? -1 : 0;
-*/
 
     
 
