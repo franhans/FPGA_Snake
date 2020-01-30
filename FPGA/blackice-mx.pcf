@@ -1,0 +1,54 @@
+#Constraint File for myStorm BlackIce Mx
+
+
+
+# Onboard 25Mhz oscillator
+set_io clk 60
+
+set_io -pullup yes RSTN_BUTTON 49 #reset button
+
+#pmod 1
+set_io PMOD[0] 38 # P8, B57
+set_io PMOD[1] 37 # P9, B56
+set_io PMOD[2] 32 # P12, 24b
+set_io PMOD[3] 31 # P13, 24a
+
+#pmod 2
+set_io PMOD[4] 34 # P10, 25b
+set_io PMOD[5] 33 # P11, 25a
+set_io PMOD[6] 29 # P14, 23b
+set_io PMOD[7] 28 # P15, 23a
+
+#pmod 3
+set_io PMOD[8] 18 # P24, 12b
+set_io PMOD[9] 17 # P25, 12a
+set_io PMOD[10] 12 # P28, 8b
+set_io PMOD[11] 11 # P29 8a
+
+#pmod 4
+set_io PMOD[12] 16 # P26, 10b
+set_io PMOD[13] 15 # P27 10a
+set_io PMOD[14] 10 # P30, 5b
+set_io PMOD[15] 9 # P31, 5a
+
+
+
+#Display 7 segments
+set_io seg[0] 3  # a
+set_io seg[1] 4  # b
+set_io seg[2] 144  # c
+set_io seg[3] 143  # d
+set_io seg[4] 1  # e
+set_io seg[5] 8  # f
+set_io seg[6] 7  # g
+
+
+set_io ca[0] 135  # ca0
+set_io ca[1] 139 # ca1
+set_io ca[2] 138  # ca2
+
+
+
+#UART
+set_io rx 61
+#set_io tx 62
