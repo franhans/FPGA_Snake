@@ -34,7 +34,7 @@ module top (
     localparam down  = 2'b11;    
 
 
-    localparam maxTwists = 2;
+    localparam maxTwists = 10;
 
 //--------------------
 //IO pins assigments
@@ -308,7 +308,7 @@ module top (
                 B_int <= 4'b0;
         end else
         if (activevideo) begin
-		if (draw_collision == 1 || draw_collision == 2)  //Esto no deberia ser asi
+		if (draw_collision > 0 && draw_collision < 5)  //Esto no deberia ser asi
 			G_int <= 4'b1000;
 		else 
 			G_int <= 4'b0000;
