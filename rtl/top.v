@@ -34,7 +34,7 @@ module top (
     localparam down  = 2'b11;    
 
 
-    localparam maxTwists = 20;
+    localparam maxTwists = 2;
 
 //--------------------
 //IO pins assigments
@@ -85,6 +85,7 @@ module top (
         bf2_rstn <= bf1_rstn;
     end
     assign  rstn = bf2_rstn;
+    
     //Reset button
     `ifdef __ICARUS__	
     `else
@@ -107,6 +108,7 @@ module top (
     wire wr_f;
     reg  wr_f2 = 0;
     reg [7:0] regData = 0;
+    reg [7:0] prevRegData = 0;
 
 
     //Sync signals
@@ -132,12 +134,14 @@ module top (
 
 
     //Element's position and directions
-    reg [9:0] beginX = 110;
+    reg [9:0] beginX = 500;
     reg [9:0] finalX = 100;
     reg [9:0] beginY = 200;
     reg [9:0] finalY = 200;
     reg [1:0] finalDir = 2'b00;
     reg [1:0] beginDir = 2'b00;
+
+    wire collision;
 
     
     //--------------------------------------------------------------------------------------
@@ -176,43 +180,40 @@ module top (
 			segmentsReg[i] <= 21'b000000000000000000000;
 		finalDir <= 2'b00;
     		beginDir <= 2'b00;
+		prevRegData <= 0;
 	end
 	else begin 
-		//if ((wr_f && (regData >= 65 || regData <= 68)) || (!lastValidReg[8] && (finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]))) begin
-			if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
-				segmentsReg[lastValidReg] <= 0;
-				if (!(&lastValidReg)) begin //deberia actualizarse lastValidReg pero no estoy seguro
+		if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
+			segmentsReg[lastValidReg] <= 0;
+			if (!(&lastValidReg)) begin 
 					finalDir <= segmentsReg[lastValidReg][1:0];
-				end
-				/*else begin
-					finalDir <= beginDir;    No deberia hacer falta porque las direcciones ya son iguales
-				end*/ 
 			end
-			else if (wr_f2 && (regData >= 65 || regData <= 68)) begin
-				case (regData) 
-				    65: begin
-					segmentsReg [0] <= {beginY, beginX, up};
-					beginDir <= up;
-					end
-				    66: begin
-					segmentsReg [0] <= {beginY, beginX, down};
-					beginDir <= down;
-					end
-				    67: begin
-					segmentsReg [0] <= {beginY, beginX, right};
-					beginDir <= right;
-					end
-				    68: begin
-					segmentsReg [0] <= {beginY, beginX, left};
-					beginDir <= left;
-					end
-					default: beginDir <= beginDir;
-				endcase
-				for (i = 1; i <= maxTwists; i = i + 1) 
-					segmentsReg[i] <= segmentsReg[i-1];
-			end 
-		//end else
-				//regData <= regData;
+		end
+		else if (wr_f2 && (regData >= 65 || regData <= 68) && (regData != prevRegData)) begin 
+			prevRegData <= regData;
+			case (regData) 
+			  65: begin
+				segmentsReg [0] <= {beginY, beginX, up};
+				beginDir <= up;
+			      end
+			  66: begin
+				segmentsReg [0] <= {beginY, beginX, down};
+				beginDir <= down;
+			      end
+			  67: begin
+				segmentsReg [0] <= {beginY, beginX, right};
+				beginDir <= right;
+			      end
+			  68: begin
+				segmentsReg [0] <= {beginY, beginX, left};
+				beginDir <= left;
+			      end
+			endcase
+
+			for (i = 1; i <= maxTwists; i = i + 1) 
+				segmentsReg[i] <= segmentsReg[i-1];
+		end 
+
 	end
     end		
 
@@ -228,7 +229,7 @@ module top (
 
     always @(posedge clk) begin 
 	if (!rstn) begin
-		beginX <= 300;
+		beginX <= 500;
     		finalX <= 100;
     		beginY <= 200;
     		finalY <= 200;
@@ -291,6 +292,14 @@ module top (
 
     end 
 
+    reg drawFrame = 0;
+    always @(*) begin
+	if (x_px < 10 || x_px > 630 || y_px < 10 || y_px > 470)
+		drawFrame = 1;
+	else 
+		drawFrame = 0;
+    end
+
     //Update next pixel color
     always @(posedge px_clk) begin
         if (!rstn) begin 
@@ -299,13 +308,18 @@ module top (
                 B_int <= 4'b0;
         end else
         if (activevideo) begin
-		if (draw_collision > 0)  //Esto no deberia ser asi
+		if (draw_collision == 1 || draw_collision == 2)  //Esto no deberia ser asi
 			G_int <= 4'b1000;
 		else 
 			G_int <= 4'b0000;
+		if (drawFrame == 1)
+			B_int <= 4'b1000;
+		else 
+			B_int <= 4'b0000;
        	end
     end
 
+    assign collision = (draw_collision > 0 && drawFrame) ?  1 : 0;
 
 
 
@@ -330,10 +344,9 @@ module top (
 		else begin
 			wr1 <= wr;
 			wr_f2 <= wr_f;
-			if (wr_f)
+			if (wr_f) begin
 				regData <= data; 
-			else 
-				regData <= regData;
+			end
 		end
 	end
 	
