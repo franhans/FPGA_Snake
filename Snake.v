@@ -7,7 +7,7 @@ module snake (
     input [9:0] x_px,         // x pixel postition
     input [9:0] y_px,         // y pixel position
     input activevideo,        // activevideo is 1 when x_px and y_px are in the visible zone of the screen.
-    output wire [15:0] PMOD   // Led outputs
+    output wire [11:0] RGB   // Led outputs
   );
   
 
@@ -32,7 +32,7 @@ module snake (
     localparam down  = 2'b11;    
 
 
-    parameter maxTwists = 10;
+    parameter maxTwists = 20;
     parameter initialPositionBeginX = 500;
     parameter initialPositionFinalX = 100;
     parameter initialPositionBeginY = 200;
@@ -47,24 +47,24 @@ module snake (
     wire G0, G1, G2, G3;
     wire B0, B1, B2, B3;
     wire HS,VS;
-    //pmod1
-    assign PMOD[0] = B0;
-    assign PMOD[1] = B1;
-    assign PMOD[2] = B2;
-    assign PMOD[3] = B3;
-    assign PMOD[4] = R0;
-    assign PMOD[5] = R1;
-    assign PMOD[6] = R2;
-    assign PMOD[7] = R3;
-    //pmod2
-    assign PMOD[8] = HS;
-    assign PMOD[9] = VS;
-    assign PMOD[10] = 0;
-    assign PMOD[11] = 0;
-    assign PMOD[12] = G0;
-    assign PMOD[13] = G1;
-    assign PMOD[14] = G2;
-    assign PMOD[15] = G3;
+    //RGB1
+    assign RGB[0] = B0;
+    assign RGB[1] = B1;
+    assign RGB[2] = B2;
+    assign RGB[3] = B3;
+    assign RGB[4] = R0;
+    assign RGB[5] = R1;
+    assign RGB[6] = R2;
+    assign RGB[7] = R3;
+    //RGB2
+    //assign RGB[8] = HS;
+    //assign RGB[9] = VS;
+    //assign RGB[10] = 0;
+    //assign RGB[11] = 0;
+    assign RGB[8] = G0;
+    assign RGB[9] = G1;
+    assign RGB[10] = G2;
+    assign RGB[11] = G3;
 
 
 
@@ -135,7 +135,6 @@ module snake (
     reg [0:70] isEmpty;
     reg [8:0]  lastValidReg; 
 
-    wire collision;  //collision is 1 if the snake collides aginst itself or against the frame
     
     integer i;
     integer j;
@@ -204,14 +203,13 @@ module snake (
     end		
 
 
- //-----------------------------------------------------
- //    Position actualization and collision managment
- //-----------------------------------------------------
+ //----------------------------
+ //   Position actualization
+ //----------------------------
    
-    reg resetCollision = 0;
-    wire updateSnakePosition = resetCollision;
+    reg updateSnakePosition = 0;
 
-    always @(posedge clk) resetCollision <= (x_px == 639) & (y_px == 479);
+    always @(posedge clk) updateSnakePosition <= (x_px == 639) & (y_px == 479);
 
     always @(posedge clk) begin 
 	if (!rstn) begin
@@ -239,8 +237,14 @@ module snake (
 	end
     end
 	
+
+ //-------------------------------------
+ //   Drawing and collition management
+ //-------------------------------------
    
     reg [2:0] draw_collision;
+    wire collision;  //collision is 1 if the snake collides aginst itself or against the frame
+
     always @(*) begin
 	draw_collision = 0;
 	if (!lastValidReg[8]) begin
@@ -294,7 +298,7 @@ module snake (
                 B_int <= 4'b0;
         end else
         if (activevideo) begin
-		if (draw_collision > 0 && draw_collision < 5)  //Esto no deberia ser asi
+		if (draw_collision > 0 && draw_collision < 5)  //Esto no deberia ser asi escribe dos veces en la memoria
 			G_int <= 4'b1000;
 		else 
 			G_int <= 4'b0000;
