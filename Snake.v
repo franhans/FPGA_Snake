@@ -1,16 +1,15 @@
-`default_nettype none   
-
-module top (
-    input wire clk,	      // 25MHz clock input
-    input wire RSTN_BUTTON,   // rstn,
-    input wire rx,            // Tx from the computer
-    output wire [15:0] PMOD,  // Led outputs
-    //segments outputs
-    output wire [6:0] seg,
-    output wire [2:0] ca
+module snake (
+    input clk,	              // 25MHz clock input
+    input px_clk,	      // 31MHz clock input
+    input rstn,               // rstn,
+    input [7:0] dataRX,       // Tx from the computer
+    input WR_RX,              // WR_RX is 1 when dataRX is valid, otherwise 0.
+    input [9:0] x_px,         // x pixel postition
+    input [9:0] y_px,         // y pixel position
+    input activevideo,        // activevideo is 1 when x_px and y_px are in the visible zone of the screen.
+    output wire [15:0] PMOD   // Led outputs
   );
-
-    
+  
 
 //--------------------
 //Local parameters
@@ -33,7 +32,12 @@ module top (
     localparam down  = 2'b11;    
 
 
-    localparam maxTwists = 10;
+    parameter maxTwists = 10;
+    parameter initialPositionBeginX = 500;
+    parameter initialPositionFinalX = 100;
+    parameter initialPositionBeginY = 200;
+    parameter initialPositionFinalY = 200;
+
 
 //--------------------
 //IO pins assigments
@@ -43,8 +47,6 @@ module top (
     wire G0, G1, G2, G3;
     wire B0, B1, B2, B3;
     wire HS,VS;
-    wire rstn;
-    wire px_clk;
     //pmod1
     assign PMOD[0] = B0;
     assign PMOD[1] = B1;
@@ -65,6 +67,7 @@ module top (
     assign PMOD[15] = G3;
 
 
+
 //--------------------
 // IP internal signals
 //--------------------
@@ -73,49 +76,6 @@ module top (
     reg [3:0] R_int = 0;
     reg [3:0] G_int = 0;
     reg [3:0] B_int = 0;
-
-
-    //sync reset from button and enable pull up
-    wire rstn_button_int; //internal signal after pullups
-    reg bf1_rstn;
-    reg bf2_rstn;
-    always @(posedge px_clk) begin
-        bf1_rstn <= rstn_button_int;
-        bf2_rstn <= bf1_rstn;
-    end
-    assign  rstn = bf2_rstn;
-    
-    //Reset button
-    `ifdef __ICARUS__	
-    `else
-    SB_IO #(
-        .PIN_TYPE(6'b 0000_01),
-        .PULLUP(1'b1)
-    ) io_pin (
-        .PACKAGE_PIN(RSTN_BUTTON),
-        .D_IN_0(rstn_button_int)
-    );
-    `endif
-
-
-    //signals from UART
-    wire wr;
-    wire [7:0] data;
-
-    //local signals for UART
-    reg  wr1 = 1;
-    wire wr_f;
-    reg  wr_f2 = 0;
-    reg [7:0] regData = 0;
-    reg [7:0] prevRegData = 0;
-
-
-    //Sync signals
-    wire [9:0] x_px;
-    wire [9:0] y_px;
-    wire activevideo;
-
-    VgaSyncGen vga_inst( .clk(clk), .hsync(HS), .vsync(VS), .x_px(x_px), .y_px(y_px), .px_clk(px_clk), .activevideo(activevideo));
 
     //RGB values assigment from pixel color register
     assign R0 = activevideo ? R_int[0] :0; 
@@ -133,14 +93,39 @@ module top (
 
 
     //Element's position and directions
-    reg [9:0] beginX = 500;
-    reg [9:0] finalX = 100;
-    reg [9:0] beginY = 200;
-    reg [9:0] finalY = 200;
-    reg [1:0] finalDir = 2'b00;
-    reg [1:0] beginDir = 2'b00;
+    reg [9:0] beginX = initialPositionBeginX;
+    reg [9:0] finalX = initialPositionFinalX;
+    reg [9:0] beginY = initialPositionBeginY;
+    reg [9:0] finalY = initialPositionFinalY;
+    reg [1:0] finalDir = right;
+    reg [1:0] beginDir = right;
 
-    wire collision;
+    
+    //local signals for UART
+    reg  wr1 = 1;
+    wire wr_f;
+    reg  wr_f2 = 0;
+    reg [7:0] regDataRX = 0;
+    //reg [7:0] prevRegData = 0;
+
+    //flank detector and register for the data from the UART
+    always @(posedge clk) begin
+	if (!rstn) begin
+		wr1 <= 1;
+		wr_f2 <= 0;
+		regDataRX <= 0;
+	end
+	else begin
+		wr1 <= WR_RX;
+		wr_f2 <= wr_f;
+		if (wr_f) begin
+			regDataRX <= dataRX; 
+		end
+	end
+    end
+	
+    assign wr_f = (WR_RX & ~wr1);  // wr_f is 1 during one clock cycle only. wr_f1 it's the same but with one cycle delayed.
+    
 
     
     //--------------------------------------------------------------------------------------
@@ -149,6 +134,8 @@ module top (
     reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
     reg [0:70] isEmpty;
     reg [8:0]  lastValidReg; 
+
+    wire collision;  //collision is 1 if the snake collides aginst itself or against the frame
     
     integer i;
     integer j;
@@ -177,9 +164,9 @@ module top (
     	if (!rstn) begin
 		for (i = 0; i <= maxTwists ; i = i + 1)
 			segmentsReg[i] <= 21'b000000000000000000000;
-		finalDir <= 2'b00;
-    		beginDir <= 2'b00;
-		prevRegData <= 0;
+		finalDir <= right;
+    		beginDir <= right;
+		//prevRegData <= 0;
 	end
 	else begin 
 		if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
@@ -188,9 +175,9 @@ module top (
 					finalDir <= segmentsReg[lastValidReg][1:0];
 			end
 		end
-		else if (wr_f2 && (regData >= 65 || regData <= 68) && (regData != prevRegData)) begin 
-			prevRegData <= regData;
-			case (regData) 
+		else if (wr_f2 && (regDataRX >= 65 || regDataRX <= 68)) begin  //&& (regDataRX != prevRegData)
+			//prevRegData <= regDataRX;
+			case (regDataRX) 
 			  65: begin
 				segmentsReg [0] <= {beginY, beginX, up};
 				beginDir <= up;
@@ -228,25 +215,25 @@ module top (
 
     always @(posedge clk) begin 
 	if (!rstn) begin
-		beginX <= 500;
-    		finalX <= 100;
-    		beginY <= 200;
-    		finalY <= 200;
+		beginX <= initialPositionBeginX;
+    		finalX <= initialPositionFinalX;
+    		beginY <= initialPositionBeginY;
+    		finalY <= initialPositionFinalY;
 	end 
 	else begin
 		if (updateSnakePosition) begin
 			//añadir colisiones
 			case (beginDir)
-			    2'b00: beginX <= beginX + 1;
-			    2'b01: beginX <= beginX - 1;
-			    2'b10: beginY <= beginY - 1;
-			    2'b11: beginY <= beginY + 1;
+			    right: beginX <= beginX + 1;
+			    left : beginX <= beginX - 1;
+			    up   : beginY <= beginY - 1;
+			    down : beginY <= beginY + 1;
 			endcase
 			case (finalDir)
-			    2'b00: finalX <= finalX + 1;
-			    2'b01: finalX <= finalX - 1;
-			    2'b10: finalY <= finalY - 1;
-			    2'b11: finalY <= finalY + 1;
+			    right: finalX <= finalX + 1;
+			    left : finalX <= finalX - 1;
+			    up   : finalY <= finalY - 1;
+			    down : finalY <= finalY + 1;
 			endcase
 		end
 	end
@@ -258,34 +245,34 @@ module top (
 	draw_collision = 0;
 	if (!lastValidReg[8]) begin
 		case (finalDir)
-	   	  2'b00: if (x_px > finalX - 8 && x_px < segmentsReg[lastValidReg][11:2] + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
-	  	  2'b01: if (x_px > segmentsReg[lastValidReg][11:2] - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
-	  	  2'b10: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > segmentsReg[lastValidReg][21:12] - 8)  draw_collision = draw_collision + 1;
-         	  2'b11: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < segmentsReg[lastValidReg][21:12] + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
+	   	  right: if (x_px > finalX - 8 && x_px < segmentsReg[lastValidReg][11:2] + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
+	  	  left : if (x_px > segmentsReg[lastValidReg][11:2] - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
+	  	  up   : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > segmentsReg[lastValidReg][21:12] - 8)  draw_collision = draw_collision + 1;
+         	  down : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < segmentsReg[lastValidReg][21:12] + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
 		endcase
 		for (i = maxTwists; i > 0; i = i - 1) begin
 			if (isEmpty[i]) begin
 				case (segmentsReg[i][1:0])
-	   	  		  2'b00: if (x_px > segmentsReg[i][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;   
-	  	  		  2'b01: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;
-	  	  		  2'b10: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i][21:12] + 8 && y_px > segmentsReg[i-1][21:12] - 8)  draw_collision = draw_collision + 1;
-         	  		  2'b11: if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i-1][21:12] + 8 && y_px > segmentsReg[i][21:12] - 8)  draw_collision = draw_collision + 1;
+	   	  		  right: if (x_px > segmentsReg[i][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;   
+	  	  		  left : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;
+	  	  		  up   : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i][21:12] + 8 && y_px > segmentsReg[i-1][21:12] - 8)  draw_collision = draw_collision + 1;
+         	  		  down : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i-1][21:12] + 8 && y_px > segmentsReg[i][21:12] - 8)  draw_collision = draw_collision + 1;
 				endcase
 			end
 		end
 		case (beginDir)
-	   	  2'b00: if (x_px > segmentsReg[0][11:2] - 8 && x_px < beginX + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;   
-	  	  2'b01: if (x_px > beginX - 8 && x_px < segmentsReg[0][11:2] + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;
-	  	  2'b10: if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < segmentsReg[0][21:12] + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
-         	  2'b11: if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < beginY + 8 && y_px > segmentsReg[0][21:12] - 8)  draw_collision = draw_collision + 1;
+	   	  right: if (x_px > segmentsReg[0][11:2] - 8 && x_px < beginX + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;   
+	  	  left : if (x_px > beginX - 8 && x_px < segmentsReg[0][11:2] + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;
+	  	  up   : if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < segmentsReg[0][21:12] + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
+         	  down : if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < beginY + 8 && y_px > segmentsReg[0][21:12] - 8)  draw_collision = draw_collision + 1;
 		endcase
 	end
 	else begin
 		case (finalDir)
-	   	  2'b00: if (x_px > finalX - 8 && x_px < beginX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
-	  	  2'b01: if (x_px > beginX - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
-	  	  2'b10: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
-         	  2'b11: if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < beginY + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
+	   	  right: if (x_px > finalX - 8 && x_px < beginX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
+	  	  left : if (x_px > beginX - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
+	  	  up   : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
+         	  down : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < beginY + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
 		endcase
 	end
 
@@ -319,46 +306,6 @@ module top (
     end
 
     assign collision = (draw_collision > 0 && drawFrame) ?  1 : 0;
-
-
-
-    
-
-//---------------------------
-//          UART-RX
-//---------------------------
-		
-
-	
-	rxuart #(.baudRate(115200), .if_parity(1'b0))
-		reciver (.i_clk(clk), .rst(rstn), .o_wr(wr), .o_data(data), .i_uart_rx(rx));
-
-	//flank detector and register for the data from the UART
-	always @(posedge clk) begin
-		if (!rstn) begin
-			wr1 <= 1;
-			wr_f2 <= 0;
-			regData <= 0;
-		end
-		else begin
-			wr1 <= wr;
-			wr_f2 <= wr_f;
-			if (wr_f) begin
-				regData <= data; 
-			end
-		end
-	end
-	
-	assign wr_f = (wr & ~wr1);
-
-
-
-//-----------------
-//     7seg
-//-----------------
-	sevenSeg S7 (.clk(clk), .binary(regData), .seg(seg), .ca(ca));
-
-
 
 
 endmodule
