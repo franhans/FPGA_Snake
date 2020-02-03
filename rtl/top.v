@@ -12,18 +12,34 @@ module top (
 
 
 	wire activevideo;
-	wire x_px, y_px;
+	wire [9:0] x_px, y_px;
 	wire px_clk;
 	wire [7:0] dataRX;
-	wire WR_RX
+	wire WR_RX;
 
 	reg RSTN1;
 	reg RSTN2;
+	wire rstn_button_int;
+
+	wire HS, VS;
+
+
+	//Reset button
+	`ifdef __ICARUS__	
+	`else
+		SB_IO #(
+		.PIN_TYPE(6'b 0000_01),
+        	.PULLUP(1'b1)
+    		) io_pin (
+       		.PACKAGE_PIN(RSTN_BUTTON),
+       		.D_IN_0(rstn_button_int)
+ 		);
+   	`endif
 
 
 	//Reset is sycronized using 2FF
 	always @(posedge clk)
-		{RSTN2, RSTN1} <= {RSTN1, RSTN_BUTTON};
+		{RSTN2, RSTN1} <= {RSTN1, rstn_button_int};
     
 
 	//     VGA
@@ -32,7 +48,9 @@ module top (
 		.x_px(x_px),			//Output			
 		.y_px(y_px), 			//Output
 		.px_clk(px_clk), 		//Output
-		.activevideo(activevideo)	//Output
+		.activevideo(activevideo),	//Output
+		.hsync(HS),			//Output
+		.vsync(VS)			//Output
 	);
 
 
@@ -42,9 +60,9 @@ module top (
 		reciver (
 			.i_clk(clk), 		//Input	
 			.rst(RSTN2), 	    	//Input	
-			.i_uart_rx(rx)		//Input
+			.i_uart_rx(rx),		//Input
 			.o_wr(WR_RX), 		//Output
-			.o_data(dataRX),	//Output
+			.o_data(dataRX)		//Output
 		);
 
 
@@ -57,12 +75,9 @@ module top (
 	);
 
 
+	wire [11:0] RGB;
 
-
-endmodule
-
-
-	snake snake1 (
+	snake sn1 (
    		.clk(clk),			// 25MHz clock input
    		.px_clk(px_clk),		// 31MHz clock input
    		.rstn(RSTN2),				// rstn,
@@ -71,8 +86,10 @@ endmodule
     		.x_px(x_px),			// x pixel postition
     		.y_px(y_px),			// y pixel position
     		.activevideo(activevideo),	// activevideo is 1 when x_px and y_px are in the visible zone of the screen.
-  		.PMOD(PMOD)			// Led outputs
+  		.RGB(RGB)			// Led outputs
 	);
+
+	assign PMOD = {RGB[11:8], 2'b00, VS, HS, RGB[7:0]};
 
 
 endmodule

@@ -6,12 +6,9 @@ bin/toplevel.json : ${VERILOG_FILES}
 	yosys -q -p "synth_ice40 -json bin/toplevel.json" ${VERILOG_FILES}
 
 bin/toplevel.asc : ${PCF_FILE} bin/toplevel.json
-	nextpnr-ice40 --freq 64 --hx8k --package tq144:4k --json bin/toplevel.json --pcf ${PCF_FILE} --asc bin/toplevel.asc --opt-timing --placer heap --gui 
+	nextpnr-ice40 --freq 25 --hx8k --package tq144:4k --json bin/toplevel.json --pcf ${PCF_FILE} --asc bin/toplevel.asc --opt-timing --placer heap 
 #--pcf-allow-unconstrained
 
-.PHONY: time_deb
-time_deb: bin/toplevel.bin
-	icetime -vtmd hx8k bin/toplevel.asc
 
 .PHONY: time
 time: bin/toplevel.bin
