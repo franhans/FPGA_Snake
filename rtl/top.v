@@ -1,4 +1,5 @@
 `default_nettype none   
+//`define __ICARUS__ 0
 
 module top (
     input wire clk,	      // 25MHz clock input

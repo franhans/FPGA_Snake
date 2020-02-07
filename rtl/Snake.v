@@ -32,11 +32,18 @@ module snake (
     localparam down  = 2'b11;    
 
 
-    parameter maxTwists = 25;
-    parameter initialPositionBeginX = 500;
-    parameter initialPositionFinalX = 100;
-    parameter initialPositionBeginY = 200;
-    parameter initialPositionFinalY = 200;
+    parameter maxTwists = 10;
+    parameter initialPositionBeginX = 40;
+    parameter initialPositionFinalX = 20;
+    parameter initialPositionBeginY = 25;
+    parameter initialPositionFinalY = 25;
+ 
+
+    //parameters of the sprites
+    localparam SpriteSIZE = 8;
+    localparam QUANTITY = 5;
+    localparam bitsPerSprite = SpriteSIZE*SpriteSIZE;
+    localparam totalBits = bitsPerSprite * QUANTITY;
 
 
 //--------------------
@@ -98,7 +105,7 @@ module snake (
     reg [9:0] beginY = initialPositionBeginY;
     reg [9:0] finalY = initialPositionFinalY;
     reg [1:0] finalDir = right;
-    reg [1:0] beginDir = right;
+    reg [1:0] beginDir = up;
 
     
     //local signals for UART
@@ -125,7 +132,9 @@ module snake (
     end
 	
     assign wr_f = (WR_RX & ~wr1);  // wr_f is 1 during one clock cycle only. wr_f1 it's the same but with one cycle delayed.
-    
+
+
+    integer i; //variable for loops
 
     
     //--------------------------------------------------------------------------------------
@@ -136,8 +145,7 @@ module snake (
     reg [8:0]  lastValidReg; 
 
     
-    integer i;
-    integer j;
+
     //Register is initialized to 0
     initial begin
 	for (i = 0; i <= maxTwists ; i = i + 1)
@@ -151,15 +159,15 @@ module snake (
 		isEmpty[i] <= |segmentsReg[i];
 	end
 	lastValidReg = 0;
-	for (j = 0; j <= maxTwists ; j = j + 1) begin
-		if (isEmpty[j])
+	for (i = 0; i <= maxTwists ; i = i + 1) begin
+		if (isEmpty[i])
 			lastValidReg = lastValidReg + 1;
 	end
 	lastValidReg = lastValidReg - 1;
     end
 
 
-    always @(posedge clk) begin
+    always @(posedge px_clk) begin
     	if (!rstn) begin
 		for (i = 0; i <= maxTwists ; i = i + 1)
 			segmentsReg[i] <= 21'b000000000000000000000;
@@ -206,8 +214,40 @@ module snake (
  //----------------------------
  //   Position actualization
  //----------------------------
+   //frame ram signals
+   wire [12:0] frame_addr; 
+   wire frame_write; 
+   reg  [2:0] frame_data_i = 4;
+   wire [2:0] frame_data_o;
+
+   //sprites ram signals
+   wire [8:0] sprite_addr; 
+   reg sprite_write = 0, sprite_data_i; 
+   wire sprite_data_o;
+
+
+
+   sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
+	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o) );
+
+   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o) );
+
+
+   wire [2:0] SpriteIndex;
+   reg [6:0] gridPositionX = 0;
+   reg [6:0] gridPositionY = 0;
+   reg [6:0] gridPositionXmem = 0;
+   reg [6:0] gridPositionYmem = 0;
+
    
     reg updateSnakePosition = 0;
+    reg [2:0] framesCounter = 0;
+    wire [1:0] rotation;
+    reg [1:0] beginRotation = 0;
+    reg updateBegin = 1;
+    wire [12:0] memory_position_write;
+
+
 
     always @(posedge px_clk) updateSnakePosition <= (x_px == 639) & (y_px == 479);
 
@@ -217,32 +257,125 @@ module snake (
     		finalX <= initialPositionFinalX;
     		beginY <= initialPositionBeginY;
     		finalY <= initialPositionFinalY;
+		frame_data_i <= 0;
+		framesCounter <= 0;
+		beginRotation <= 0;
+		//habria que reiniciar la memoria?¿?¿
 	end 
 	else begin
 		if (updateSnakePosition) begin
-			//añadir colisiones
-			case (beginDir)
-			    right: beginX <= beginX + 1;
-			    left : beginX <= beginX - 1;
-			    up   : beginY <= beginY - 1;
-			    down : beginY <= beginY + 1;
+			framesCounter <= framesCounter + 1;
+			case (framesCounter)
+			  0: frame_data_i <= 1;
+			  2: frame_data_i <= 2;
+			  4: frame_data_i <= 3;
+			  6: frame_data_i <= 4;
 			endcase
-			case (finalDir)
-			    right: finalX <= finalX + 1;
-			    left : finalX <= finalX - 1;
-			    up   : finalY <= finalY - 1;
-			    down : finalY <= finalY + 1;
-			endcase
+			if (framesCounter == 0) begin
+				case (beginDir)
+			  	  right: begin 
+					 beginX <= beginX + 1;
+					 beginRotation <= 0;
+					 end 
+			  	  left : begin 
+					  beginX <= beginX - 1;
+					  beginRotation <= 1;
+					 end 
+			   	  up   : begin 
+					  beginY <= beginY - 1;	
+					  beginRotation <= 2;
+					 end
+			   	  down : begin
+					  beginY <= beginY + 1;
+					  beginRotation <= 3;
+					 end
+				endcase
+				case (finalDir)
+				   right: finalX <= finalX + 1;
+			 	   left : finalX <= finalX - 1;
+			 	   up   : finalY <= finalY - 1;
+			  	   down : finalY <= finalY + 1;
+				endcase
+			end
 		end
 	end
     end
 	
 
+    assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
+    assign frame_write = updateSnakePosition;
+
+    assign rotation = beginRotation;
+
  //-------------------------------------
  //   Drawing and collition management
  //-------------------------------------
+
+
+   wire [9:0] n_x_px, n_y_px;
+   assign n_x_px = (x_px == 639) ? 0 : x_px + 1; 
+   assign n_y_px = (x_px != 639) ? y_px :
+                   (y_px == 479) ? 0 : y_px + 1;//creo que no es necesario
+
+   wire [9:0] n2_x_px, n2_y_px;
+   assign n2_x_px = (x_px == 638) ? 0 : 
+		    (x_px == 639) ? 1 :x_px + 2; 
+   assign n2_y_px = (x_px <  638) ? y_px :
+                    (y_px == 479) ? 0 : y_px + 1;// creo que no es necesario
+
+   always @(posedge px_clk) begin
+	if (!rstn) begin
+		gridPositionX <= 0;
+		gridPositionY <= 0;
+		//gridPositionXmem <= 0;
+		//gridPositionYmem <= 0;
+	end
+	else begin
+		if (n_x_px[2:0] == 3'b000 || n_y_px[2:0] == 3'b000) begin
+			gridPositionX <= n_x_px[9:3];
+			gridPositionY <= n_y_px[9:3];
+		end
+		if (n2_x_px[2:0] == 3'b000 || n2_y_px[2:0] == 3'b000) begin
+			gridPositionXmem <= n2_x_px[9:3];
+			gridPositionYmem <= n2_y_px[9:3];
+		end
+	end 
+   end
+
+
+   assign frame_addr = (!frame_write) ? Vwidth/8 * gridPositionY + gridPositionXmem : memory_position_write;
+   assign SpriteIndex = frame_data_o;
+
+   assign sprite_addr = (rotation == 0) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (x_px - {gridPositionX, 3'b000}) :        //0º
+                        (rotation == 1) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (7 - (x_px - {gridPositionX, 3'b000})) :  //180º
+                        (rotation == 2) ? SpriteIndex * bitsPerSprite + (x_px - {gridPositionX, 3'b000}) * SpriteSIZE + (7 - (y_px - {gridPositionY, 3'b000})) :   //90º
+                         SpriteIndex * bitsPerSprite + (x_px - {gridPositionX, 3'b000}) * SpriteSIZE + (y_px - {gridPositionY, 3'b000}) ;                          //270º
+
    
-    reg [2:0] draw_collision;
+    always @(posedge px_clk) begin
+        if (!rstn) begin 
+                R_int <= 4'b0;
+                G_int <= 4'b0;
+                B_int <= 4'b0;
+        end else
+        if (activevideo) begin
+		G_int <= {sprite_data_o, 3'b000};
+       	end
+	else 
+		G_int <= 4'b0000;
+    end
+
+
+
+
+
+
+
+
+
+
+   
+    /*reg [2:0] draw_collision;
     wire collision;  //collision is 1 if the snake collides aginst itself or against the frame
 
     always @(*) begin
@@ -309,7 +442,7 @@ module snake (
        	end
     end
 
-    assign collision = (draw_collision > 0 && drawFrame) ?  1 : 0;
+    assign collision = (draw_collision > 0 && drawFrame) ?  1 : 0;*/
 
 
 endmodule
