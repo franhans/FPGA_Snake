@@ -140,7 +140,8 @@ module snake (
     //--------------------------------------------------------------------------------------
     //    Register with positions and directions of the different segments of the snake
     //--------------------------------------------------------------------------------------
-    reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
+    reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits. 
+						//reducir tamaños
     reg [0:70] isEmpty;
     reg [8:0]  lastValidReg; 
 
@@ -216,8 +217,8 @@ module snake (
  //----------------------------
    //frame ram signals
    wire [12:0] frame_addr; 
-   wire frame_write; 
-   reg  [2:0] frame_data_i = 4;
+   reg frame_write; 
+   wire  [2:0] frame_data_i;
    wire [2:0] frame_data_o;
 
    //sprites ram signals
@@ -240,16 +241,79 @@ module snake (
    reg [6:0] gridPositionYmem = 0;
 
    
-    reg updateSnakePosition = 0;
-    reg [2:0] framesCounter = 0;
+    reg frameEnded = 0;
+    reg [7:0] framesCounter = 0;
     wire [1:0] rotation;
     reg [1:0] beginRotation = 0;
-    reg updateBegin = 1;
+    reg [1:0] finalRotation = 0;
+
+
+    //fsm to control the ram writing and the collision detection
+    //states: waiting = 2'b00, write final = 2'b01, collision detection = 2'b10, write begin = 2'b11
+    reg  [1:0] state = 2'b00;
+    reg [1:0] n_state;
+
+    reg updateBegin;
     wire [12:0] memory_position_write;
 
+    reg beginSprite;
+    reg finalSprite;
+
+    reg endOfFrameCounterEN;
+    always @(posedge px_clk) frameEnded <= (x_px == 639) & (y_px == 479);
+
+    reg [7:0] writeCounter = 0;
+    always @(posedge px_clk) if (!endOfFrameCounterEN) writeCounter <= 0; else writeCounter <= writeCounter + 1;
+    
+
+    always @( posedge clk) if (!rstn) state <= 0; else state <=  n_state;
+    always @(*) begin
+	//endOfFrameCounterEN <= 1;
+	n_state <= state;
+	endOfFrameCounterEN <= 0;
+	case (state)
+		2'b00: begin
+			//endOfFrameCounterEn <= 0;
+			frame_write <= 0;
+			updateBegin <= 0;
+			if (frameEnded) 
+				n_state <= 2'b01;
+			end
+		2'b01: begin
+			frame_write <= 0;//=1
+			updateBegin <= 0;
+			n_state <= 2'b10;
+			end
+		2'b10: begin
+			frame_write <= 0;
+			updateBegin <= 0;
+			n_state <= 2'b11;
+			end
+		2'b11: begin
+			endOfFrameCounterEN <= 1;
+			frame_write <= 1;
+			updateBegin <= 1;	
+			if (writeCounter == 10)	
+			n_state <= 2'b00;
+			end
+	endcase
+	updateBegin <= 1;
+	
+    end
+    
 
 
-    always @(posedge px_clk) updateSnakePosition <= (x_px == 639) & (y_px == 479);
+
+    //algo falla aqui
+
+    assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
+    assign frame_data_i = (updateBegin) ? beginSprite : finalSprite;
+
+    assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : beginRotation;//finalRotation;
+
+
+
+    
 
     always @(posedge px_clk) begin 
 	if (!rstn) begin
@@ -257,19 +321,32 @@ module snake (
     		finalX <= initialPositionFinalX;
     		beginY <= initialPositionBeginY;
     		finalY <= initialPositionFinalY;
-		frame_data_i <= 0;
+		beginSprite <= 0;
+		finalSprite <= 0;
 		framesCounter <= 0;
 		beginRotation <= 0;
 		//habria que reiniciar la memoria?¿?¿
 	end 
 	else begin
-		if (updateSnakePosition) begin
+		if (frameEnded) begin
 			framesCounter <= framesCounter + 1;
 			case (framesCounter)
-			  0: frame_data_i <= 1;
-			  2: frame_data_i <= 2;
-			  4: frame_data_i <= 3;
-			  6: frame_data_i <= 4;
+			  0: begin
+				beginSprite <= 1;
+				//finalSprite <= 3;
+			     end
+			  50: begin
+				beginSprite <= 2;
+				//finalSprite <= 2;
+			     end
+			  100: begin
+				beginSprite <= 3;
+				//finalSprite <= 1;
+			     end
+			  150: begin
+				beginSprite <= 4;
+				//finalSprite <= 0;
+			     end
 			endcase
 			if (framesCounter == 0) begin
 				case (beginDir)
@@ -291,10 +368,22 @@ module snake (
 					 end
 				endcase
 				case (finalDir)
-				   right: finalX <= finalX + 1;
-			 	   left : finalX <= finalX - 1;
-			 	   up   : finalY <= finalY - 1;
-			  	   down : finalY <= finalY + 1;
+			  	  right: begin 
+					 finalX <= finalX + 1;
+					 finalRotation <= 0;
+					 end 
+			  	  left : begin 
+					  finalX <= finalX - 1;
+					  finalRotation <= 1;
+					 end 
+			   	  up   : begin 
+					  finalY <= finalY - 1;	
+					  finalRotation <= 2;
+					 end
+			   	  down : begin
+					  finalY <= finalY + 1;
+					  finalRotation <= 3;
+					 end
 				endcase
 			end
 		end
@@ -302,10 +391,6 @@ module snake (
     end
 	
 
-    assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
-    assign frame_write = updateSnakePosition;
-
-    assign rotation = beginRotation;
 
  //-------------------------------------
  //   Drawing and collition management
@@ -327,8 +412,8 @@ module snake (
 	if (!rstn) begin
 		gridPositionX <= 0;
 		gridPositionY <= 0;
-		//gridPositionXmem <= 0;
-		//gridPositionYmem <= 0;
+		gridPositionXmem <= 0;
+		gridPositionYmem <= 0;
 	end
 	else begin
 		if (n_x_px[2:0] == 3'b000 || n_y_px[2:0] == 3'b000) begin
@@ -366,83 +451,6 @@ module snake (
     end
 
 
-
-
-
-
-
-
-
-
-   
-    /*reg [2:0] draw_collision;
-    wire collision;  //collision is 1 if the snake collides aginst itself or against the frame
-
-    always @(*) begin
-	draw_collision = 0;
-	if (!lastValidReg[8]) begin
-		case (finalDir)
-	   	  right: if (x_px > finalX - 8 && x_px < segmentsReg[lastValidReg][11:2] + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
-	  	  left : if (x_px > segmentsReg[lastValidReg][11:2] - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
-	  	  up   : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > segmentsReg[lastValidReg][21:12] - 8)  draw_collision = draw_collision + 1;
-         	  down : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < segmentsReg[lastValidReg][21:12] + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
-		endcase
-		for (i = maxTwists; i > 0; i = i - 1) begin
-			if (isEmpty[i]) begin
-				case (segmentsReg[i][1:0])
-	   	  		  right: if (x_px > segmentsReg[i][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;   
-	  	  		  left : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i][11:2] + 8 && y_px > segmentsReg[i-1][21:12] - 8 && y_px < segmentsReg[i-1][21:12] + 8)  draw_collision = draw_collision + 1;
-	  	  		  up   : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i][21:12] + 8 && y_px > segmentsReg[i-1][21:12] - 8)  draw_collision = draw_collision + 1;
-         	  		  down : if (x_px > segmentsReg[i-1][11:2] - 8 && x_px < segmentsReg[i-1][11:2] + 8 && y_px < segmentsReg[i-1][21:12] + 8 && y_px > segmentsReg[i][21:12] - 8)  draw_collision = draw_collision + 1;
-				endcase
-			end
-		end
-		case (beginDir)
-	   	  right: if (x_px > segmentsReg[0][11:2] - 8 && x_px < beginX + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;   
-	  	  left : if (x_px > beginX - 8 && x_px < segmentsReg[0][11:2] + 8 && y_px > beginY - 8 && y_px < beginY + 8)  draw_collision = draw_collision + 1;
-	  	  up   : if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < segmentsReg[0][21:12] + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
-         	  down : if (x_px > beginX - 8 && x_px < beginX + 8 && y_px < beginY + 8 && y_px > segmentsReg[0][21:12] - 8)  draw_collision = draw_collision + 1;
-		endcase
-	end
-	else begin
-		case (finalDir)
-	   	  right: if (x_px > finalX - 8 && x_px < beginX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;   
-	  	  left : if (x_px > beginX - 8 && x_px < finalX + 8 && y_px > finalY - 8 && y_px < finalY + 8)  draw_collision = draw_collision + 1;
-	  	  up   : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < finalY + 8 && y_px > beginY - 8)  draw_collision = draw_collision + 1;
-         	  down : if (x_px > finalX - 8 && x_px < finalX + 8 && y_px < beginY + 8 && y_px > finalY - 8)  draw_collision = draw_collision + 1;
-		endcase
-	end
-
-    end 
-
-    reg drawFrame = 0;
-    always @(*) begin
-	if (x_px < 10 || x_px > 630 || y_px < 10 || y_px > 470)
-		drawFrame = 1;
-	else 
-		drawFrame = 0;
-    end
-
-    //Update next pixel color
-    always @(posedge px_clk) begin
-        if (!rstn) begin 
-                R_int <= 4'b0;
-                G_int <= 4'b0;
-                B_int <= 4'b0;
-        end else
-        if (activevideo) begin
-		if (draw_collision > 0 && draw_collision < 5)  //Esto no deberia ser asi escribe dos veces en la memoria
-			G_int <= 4'b1000;
-		else 
-			G_int <= 4'b0000;
-		if (drawFrame == 1)
-			B_int <= 4'b1000;
-		else 
-			B_int <= 4'b0000;
-       	end
-    end
-
-    assign collision = (draw_collision > 0 && drawFrame) ?  1 : 0;*/
 
 
 endmodule
