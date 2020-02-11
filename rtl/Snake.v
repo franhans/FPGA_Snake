@@ -226,9 +226,9 @@ module snake (
 
 
    sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
-	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o), .rstn(rstn));
+	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o));
 
-   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o), .rstn(1'b1) );
+   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o));
 
 
    wire [2:0] SpriteIndex;
