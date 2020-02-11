@@ -32,9 +32,9 @@ module snake (
     localparam down  = 2'b11;    
 
 
-    parameter maxTwists = 10;
+    parameter maxTwists = 5;
     parameter initialPositionBeginX = 40;
-    parameter initialPositionFinalX = 20;
+    parameter initialPositionFinalX = 19;
     parameter initialPositionBeginY = 25;
     parameter initialPositionFinalY = 25;
  
@@ -63,11 +63,6 @@ module snake (
     assign RGB[5] = R1;
     assign RGB[6] = R2;
     assign RGB[7] = R3;
-    //RGB2
-    //assign RGB[8] = HS;
-    //assign RGB[9] = VS;
-    //assign RGB[10] = 0;
-    //assign RGB[11] = 0;
     assign RGB[8] = G0;
     assign RGB[9] = G1;
     assign RGB[10] = G2;
@@ -105,25 +100,27 @@ module snake (
     reg [9:0] beginY = initialPositionBeginY;
     reg [9:0] finalY = initialPositionFinalY;
     reg [1:0] finalDir = right;
-    reg [1:0] beginDir = up;
+    reg [1:0] beginDir = right;
 
     
     //local signals for UART
     reg  wr1 = 1;
+    reg  wr2 = 1;
     wire wr_f;
     reg  wr_f2 = 0;
     reg [7:0] regDataRX = 0;
-    //reg [7:0] prevRegData = 0;
+    reg [7:0] prevRegData = 0;
 
     //flank detector and register for the data from the UART
-    always @(posedge clk) begin
+    always @(posedge px_clk) begin
 	if (!rstn) begin
 		wr1 <= 1;
+		wr2 <= 1;
 		wr_f2 <= 0;
 		regDataRX <= 0;
 	end
 	else begin
-		wr1 <= WR_RX;
+		{wr2, wr1} <= {wr1, WR_RX};
 		wr_f2 <= wr_f;
 		if (wr_f) begin
 			regDataRX <= dataRX; 
@@ -131,7 +128,7 @@ module snake (
 	end
     end
 	
-    assign wr_f = (WR_RX & ~wr1);  // wr_f is 1 during one clock cycle only. wr_f1 it's the same but with one cycle delayed.
+    assign wr_f = (WR_RX & ~wr2);  // wr_f is 1 during one clock cycle only. wr_f1 it's the same but with one cycle delayed.
 
 
     integer i; //variable for loops
@@ -174,7 +171,7 @@ module snake (
 			segmentsReg[i] <= 21'b000000000000000000000;
 		finalDir <= right;
     		beginDir <= right;
-		//prevRegData <= 0;
+		prevRegData <= 0;
 	end
 	else begin 
 		if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
@@ -183,8 +180,8 @@ module snake (
 					finalDir <= segmentsReg[lastValidReg][1:0];
 			end
 		end
-		else if (wr_f2 && (regDataRX >= 65 || regDataRX <= 68)) begin  //&& (regDataRX != prevRegData)
-			//prevRegData <= regDataRX;
+		else if (wr_f2 && regDataRX >= 65 && regDataRX <= 68 && prevRegData != regDataRX) begin  
+			prevRegData <= regDataRX;
 			case (regDataRX) 
 			  65: begin
 				segmentsReg [0] <= {beginY, beginX, up};
@@ -229,9 +226,9 @@ module snake (
 
 
    sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
-	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o) );
+	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o), .rstn(rstn));
 
-   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o) );
+   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o), .rstn(1'b1) );
 
 
    wire [2:0] SpriteIndex;
@@ -242,10 +239,10 @@ module snake (
 
    
     reg frameEnded = 0;
-    reg [7:0] framesCounter = 0;
+    reg [2:0] framesCounter = 0;
     wire [1:0] rotation;
-    reg [1:0] beginRotation = 0;
-    reg [1:0] finalRotation = 0;
+    wire [1:0] beginRotation;
+    wire [1:0] finalRotation;
 
 
     //fsm to control the ram writing and the collision detection
@@ -256,31 +253,26 @@ module snake (
     reg updateBegin;
     wire [12:0] memory_position_write;
 
-    reg beginSprite;
-    reg finalSprite;
+    reg [2:0] beginSprite;
+    reg [2:0] finalSprite;
 
-    reg endOfFrameCounterEN;
     always @(posedge px_clk) frameEnded <= (x_px == 639) & (y_px == 479);
 
-    reg [7:0] writeCounter = 0;
-    always @(posedge px_clk) if (!endOfFrameCounterEN) writeCounter <= 0; else writeCounter <= writeCounter + 1;
+
     
 
-    always @( posedge clk) if (!rstn) state <= 0; else state <=  n_state;
+    always @( posedge px_clk) if (!rstn) state <= 0; else state <=  n_state;
     always @(*) begin
-	//endOfFrameCounterEN <= 1;
 	n_state <= state;
-	endOfFrameCounterEN <= 0;
 	case (state)
 		2'b00: begin
-			//endOfFrameCounterEn <= 0;
 			frame_write <= 0;
 			updateBegin <= 0;
 			if (frameEnded) 
 				n_state <= 2'b01;
 			end
 		2'b01: begin
-			frame_write <= 0;//=1
+			frame_write <= 1;
 			updateBegin <= 0;
 			n_state <= 2'b10;
 			end
@@ -290,26 +282,20 @@ module snake (
 			n_state <= 2'b11;
 			end
 		2'b11: begin
-			endOfFrameCounterEN <= 1;
 			frame_write <= 1;
-			updateBegin <= 1;	
-			if (writeCounter == 10)	
+			updateBegin <= 1;		
 			n_state <= 2'b00;
 			end
 	endcase
-	updateBegin <= 1;
 	
     end
     
 
 
-
-    //algo falla aqui
-
     assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
     assign frame_data_i = (updateBegin) ? beginSprite : finalSprite;
 
-    assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : beginRotation;//finalRotation;
+    assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;//finalRotation;
 
 
 
@@ -323,9 +309,7 @@ module snake (
     		finalY <= initialPositionFinalY;
 		beginSprite <= 0;
 		finalSprite <= 0;
-		framesCounter <= 0;
-		beginRotation <= 0;
-		//habria que reiniciar la memoria?¿?¿
+		framesCounter <= 0;	
 	end 
 	else begin
 		if (frameEnded) begin
@@ -333,56 +317,56 @@ module snake (
 			case (framesCounter)
 			  0: begin
 				beginSprite <= 1;
-				//finalSprite <= 3;
+				finalSprite <= 3;
 			     end
-			  50: begin
+			  2: begin
 				beginSprite <= 2;
-				//finalSprite <= 2;
+				finalSprite <= 2;
 			     end
-			  100: begin
+			  4: begin
 				beginSprite <= 3;
-				//finalSprite <= 1;
+				finalSprite <= 1;
 			     end
-			  150: begin
+			  6: begin
 				beginSprite <= 4;
-				//finalSprite <= 0;
+				finalSprite <= 0;
 			     end
 			endcase
 			if (framesCounter == 0) begin
 				case (beginDir)
 			  	  right: begin 
 					 beginX <= beginX + 1;
-					 beginRotation <= 0;
+					 //beginRotation <= 0;
 					 end 
 			  	  left : begin 
 					  beginX <= beginX - 1;
-					  beginRotation <= 1;
+					  //beginRotation <= 1;
 					 end 
 			   	  up   : begin 
 					  beginY <= beginY - 1;	
-					  beginRotation <= 2;
+					  //beginRotation <= 2;
 					 end
 			   	  down : begin
 					  beginY <= beginY + 1;
-					  beginRotation <= 3;
+					  //beginRotation <= 3;
 					 end
 				endcase
 				case (finalDir)
 			  	  right: begin 
 					 finalX <= finalX + 1;
-					 finalRotation <= 0;
+					 //finalRotation <= 1;
 					 end 
 			  	  left : begin 
 					  finalX <= finalX - 1;
-					  finalRotation <= 1;
+					  //finalRotation <= 0;
 					 end 
 			   	  up   : begin 
 					  finalY <= finalY - 1;	
-					  finalRotation <= 2;
+					  //finalRotation <= 3;
 					 end
 			   	  down : begin
 					  finalY <= finalY + 1;
-					  finalRotation <= 3;
+					  //finalRotation <= 2;
 					 end
 				endcase
 			end
@@ -390,6 +374,14 @@ module snake (
 	end
     end
 	
+    assign beginRotation = (beginDir == right) ? 0:
+                           (beginDir == left ) ? 1:
+                           (beginDir == up   ) ? 2: 3;
+
+    assign finalRotation = (finalDir == right) ? 1:
+                           (finalDir == left ) ? 0:
+                           (finalDir == up   ) ? 3: 2;
+ 
 
 
  //-------------------------------------
@@ -431,10 +423,10 @@ module snake (
    assign frame_addr = (!frame_write) ? Vwidth/8 * gridPositionY + gridPositionXmem : memory_position_write;
    assign SpriteIndex = frame_data_o;
 
-   assign sprite_addr = (rotation == 0) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (x_px - {gridPositionX, 3'b000}) :        //0º
-                        (rotation == 1) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (7 - (x_px - {gridPositionX, 3'b000})) :  //180º
+   assign sprite_addr = (rotation == 0) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (x_px - {gridPositionX, 3'b000}) :         //0º
+                        (rotation == 1) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (7 - (x_px - {gridPositionX, 3'b000})) :   //180º
                         (rotation == 2) ? SpriteIndex * bitsPerSprite + (x_px - {gridPositionX, 3'b000}) * SpriteSIZE + (7 - (y_px - {gridPositionY, 3'b000})) :   //90º
-                         SpriteIndex * bitsPerSprite + (x_px - {gridPositionX, 3'b000}) * SpriteSIZE + (y_px - {gridPositionY, 3'b000}) ;                          //270º
+                         SpriteIndex * bitsPerSprite + (x_px - {gridPositionX, 3'b000}) * SpriteSIZE + (y_px - {gridPositionY, 3'b000}) ;                          //270º*/
 
    
     always @(posedge px_clk) begin
