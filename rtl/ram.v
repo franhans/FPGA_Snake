@@ -3,6 +3,7 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=320, INIT = 1) (
     input wire [ADDR_WIDTH-1:0] i_addr, 
     input wire i_write,
     input wire [DATA_WIDTH-1:0] i_data,
+    input wire rstn,
     output reg [DATA_WIDTH-1:0] o_data 
     );
 
@@ -20,12 +21,24 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=320, INIT = 1) (
     end
 
 
+    integer i;
+    //-------------------------------------------
+    //             RAM reset
+    //-------------------------------------------
+    /*always @(posedge i_clk) begin
+	if (!rstn) begin
+		for (i = 0; i < DEPTH; i = i + 1)
+			memory_array[i] = 0;
+		for (i = 80*25+20; i <= 80*25+40; i = i + 1)
+			memory_array[i] = 4;
+	end
+    end*/
    
 
     //-------------------------------------------
     //             RAM initialization
     //-------------------------------------------
-    integer i;
+
     initial begin
     	if (INIT) begin
     	
@@ -49,5 +62,6 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=320, INIT = 1) (
 		
         end
     end
+
 
 endmodule
