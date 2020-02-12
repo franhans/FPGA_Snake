@@ -32,7 +32,7 @@ module snake (
     localparam down  = 2'b11;    
 
 
-    parameter maxTwists = 5;
+    parameter maxTwists = 2^6;              //it has to be a power of 2
     parameter initialPositionBeginX = 40;
     parameter initialPositionFinalX = 19;
     parameter initialPositionBeginY = 25;
@@ -95,12 +95,13 @@ module snake (
 
 
     //Element's position and directions
-    reg [9:0] beginX = initialPositionBeginX;
-    reg [9:0] finalX = initialPositionFinalX;
-    reg [9:0] beginY = initialPositionBeginY;
-    reg [9:0] finalY = initialPositionFinalY;
+    reg [6:0] beginX = initialPositionBeginX;
+    reg [6:0] finalX = initialPositionFinalX;
+    reg [6:0] beginY = initialPositionBeginY;
+    reg [6:0] finalY = initialPositionFinalY;
     reg [1:0] finalDir = right;
     reg [1:0] beginDir = right;
+    reg [1:0] n_beginDir;
 
     
     //local signals for UART
@@ -137,43 +138,99 @@ module snake (
     //--------------------------------------------------------------------------------------
     //    Register with positions and directions of the different segments of the snake
     //--------------------------------------------------------------------------------------
-    reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits. 
-						//reducir tamaños
-    reg [0:70] isEmpty;
-    reg [8:0]  lastValidReg; 
 
-    
+    reg writeFIFO;
+    reg readFIFO;
+    wire [15:0] o_dataFIFO;
+    reg [15:0] i_dataFIFO;
+    reg [15:0] n_i_dataFIFO;
+    wire FIFOisEmpty;
+    //reg [15:0] lastPosition = -1;   //Yposition[15:9] + Xposition[8:2] + Direction[1:0] = 16 bits.
 
-    //Register is initialized to 0
-    initial begin
-	for (i = 0; i <= maxTwists ; i = i + 1)
-		segmentsReg[i] <= 21'b000000000000000000000;
-    end
-    
-    //which one is the last register with a value different than 0.
-    
-    always @(*) begin
-	for (i = 0; i <= maxTwists ; i = i + 1) begin
-		isEmpty[i] <= |segmentsReg[i];
-	end
-	lastValidReg = 0;
-	for (i = 0; i <= maxTwists ; i = i + 1) begin
-		if (isEmpty[i])
-			lastValidReg = lastValidReg + 1;
-	end
-	lastValidReg = lastValidReg - 1;
-    end
+    //State machine for FIFO control varibales
+    reg [1:0] Fstate = 0;
+    reg [1:0] n_Fstate;
+   
+    FIFO #(.DATA_WIDTH(16), .DEPTH(64)) 
+    	FIFO1 (.clk(px_clk), .rstn(rstn), .write(writeFIFO), .read(readFIFO), .i_data(i_dataFIFO), .o_data(o_dataFIFO), .isEmpty(FIFOisEmpty ));
 
 
+//  reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
     always @(posedge px_clk) begin
     	if (!rstn) begin
-		for (i = 0; i <= maxTwists ; i = i + 1)
-			segmentsReg[i] <= 21'b000000000000000000000;
 		finalDir <= right;
     		beginDir <= right;
 		prevRegData <= 0;
+		Fstate <= 0;
 	end
-	else begin 
+	else begin
+		Fstate <= n_Fstate;
+		if (Fstate == 2'b01) begin
+			finalDir <= o_dataFIFO[1:0];
+		end
+		if (n_Fstate == 2'b10) begin
+			prevRegData <= regDataRX;
+			i_dataFIFO <= n_i_dataFIFO;
+			beginDir <= n_beginDir;
+		end
+			
+	end
+    end
+
+
+    always @(*) begin
+	n_Fstate <= Fstate;
+	readFIFO <= 0;
+	writeFIFO <= 0;
+	n_beginDir <= 0;
+	n_i_dataFIFO <= 0;
+	case (Fstate)
+		2'b00: begin
+			if (!FIFOisEmpty && finalX == o_dataFIFO[8:2] && finalY == o_dataFIFO[15:9]) begin
+				n_Fstate <= 2'b01;
+				readFIFO <= 1;
+			end
+			else if (wr_f2 && regDataRX >= 65 && regDataRX <= 68 && prevRegData != regDataRX) begin
+				n_Fstate <= 2'b10;
+				case (regDataRX) 
+			  		65: begin
+					n_i_dataFIFO <= {beginY, beginX, up};
+					n_beginDir <= up;
+			      		end
+			  		66: begin
+					n_i_dataFIFO <= {beginY, beginX, down};
+					n_beginDir <= down;
+			     		 end
+					67: begin
+					n_i_dataFIFO <= {beginY, beginX, right};
+					n_beginDir <= right;
+			      		end
+			  		68: begin
+					n_i_dataFIFO <= {beginY, beginX, left};
+					n_beginDir <= left;
+			      		end
+				endcase
+			end
+		       end
+		2'b01: begin
+			n_Fstate <= 2'b00;
+			readFIFO <= 0;
+			writeFIFO <= 0;
+		       end
+		2'b10: begin
+			n_Fstate <= 2'b00;
+			readFIFO <= 0;
+			writeFIFO <= 1;
+		       end
+	endcase
+	
+    end
+
+
+
+
+
+/*
 		if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
 			segmentsReg[lastValidReg] <= 0;
 			if (!(&lastValidReg)) begin 
@@ -206,7 +263,7 @@ module snake (
 		end 
 
 	end
-    end		
+    end		*/
 
 
  //----------------------------
@@ -247,8 +304,8 @@ module snake (
 
     //fsm to control the ram writing and the collision detection
     //states: waiting = 2'b00, write final = 2'b01, collision detection = 2'b10, write begin = 2'b11
-    reg  [1:0] state = 2'b00;
-    reg [1:0] n_state;
+    reg  [1:0] Wstate = 2'b00;
+    reg [1:0] n_Wstate;
 
     reg updateBegin;
     wire [12:0] memory_position_write;
@@ -261,30 +318,30 @@ module snake (
 
     
 
-    always @( posedge px_clk) if (!rstn) state <= 0; else state <=  n_state;
+    always @( posedge px_clk) if (!rstn) Wstate <= 0; else Wstate <=  n_Wstate;
     always @(*) begin
-	n_state <= state;
-	case (state)
+	n_Wstate <= Wstate;
+	case (Wstate)
 		2'b00: begin
 			frame_write <= 0;
 			updateBegin <= 0;
 			if (frameEnded) 
-				n_state <= 2'b01;
+				n_Wstate <= 2'b01;
 			end
 		2'b01: begin
 			frame_write <= 1;
 			updateBegin <= 0;
-			n_state <= 2'b10;
+			n_Wstate <= 2'b10;
 			end
 		2'b10: begin
 			frame_write <= 0;
 			updateBegin <= 0;
-			n_state <= 2'b11;
+			n_Wstate <= 2'b11;
 			end
 		2'b11: begin
 			frame_write <= 1;
 			updateBegin <= 1;		
-			n_state <= 2'b00;
+			n_Wstate <= 2'b00;
 			end
 	endcase
 	
@@ -295,7 +352,7 @@ module snake (
     assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
     assign frame_data_i = (updateBegin) ? beginSprite : finalSprite;
 
-    assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;//finalRotation;
+    assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;
 
 
 
