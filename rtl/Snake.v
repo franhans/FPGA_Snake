@@ -272,9 +272,8 @@ module snake (
 
 
     //fsm to control the ram writing and the collision detection
-    //states: waiting = 2'b00, write final = 2'b01, collision detection = 2'b10, write begin = 2'b11
-    reg  [1:0] Wstate = 2'b00;
-    reg [1:0] n_Wstate;
+    reg  [2:0] Wstate = 3'b000;
+    reg [2:0] n_Wstate;
 
     reg updateBegin;
     wire [12:0] memory_position_write;
@@ -304,29 +303,38 @@ module snake (
     always @(*) begin
 	n_Wstate = Wstate;
 	n_collision = 0;
+	frame_write = 0;
+	updateBegin = 0;
 	case (Wstate)
-		2'b00: begin
-			frame_write = 2'b00;
-			updateBegin = 0;
-			if (frameEnded) 
-				n_Wstate = 2'b01;
+		3'b000: begin                           //detects that the frame is over
+			 frame_write = 3'b000;
+			 updateBegin = 0;
+			 if (frameEnded) 
+				n_Wstate = 3'b001;
 			end
-		2'b01: begin
-			frame_write = 2'b01;
-			updateBegin = 0;
-			n_Wstate = 2'b10;
+		3'b001: begin				//looks for a collision with the food
+			 frame_write = 3'b10;
+			 updateBegin = 1;
+			 n_Wstate = 3'b010;
 			end
-		2'b10: begin
-			frame_write = 2'b10;
-			updateBegin = 1;
-			n_Wstate = 2'b11;
+		3'b010: begin				//write the position of the final of the snake
+			 if (SpriteIndex != 7) begin
+				frame_write = 2'b01;
+				updateBegin = 0;
+			 end
+			 n_Wstate = 3'b011;
 			end
-		2'b11: begin
-			if (SpriteIndex == 4 && framesCounter == 7)
+		3'b011: begin				//looks for a collision with the snake itself
+			 frame_write = 2'b10;
+			 updateBegin = 1;
+			 n_Wstate = 3'b100;
+			end
+		3'b100: begin				//write the position of the begining of the snake and triggers the flow state machine if there is a collision
+			 if (SpriteIndex == 4 && framesCounter == 7)
 				n_collision = 1;
-			frame_write = 1;
-			updateBegin = 1;		
-			n_Wstate = 2'b00;
+			 frame_write = 1;
+			 updateBegin = 1;		
+			 n_Wstate = 3'b00;
 			end
 	endcase
 	

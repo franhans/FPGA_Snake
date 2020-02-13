@@ -51,6 +51,15 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=384, INIT = 1) (
 		for (i = 80*25+20; i <= 80*25+40; i = i + 1)
 			memory_array[i] = 4;
 		memory_array[80*22+5] = 5;
+
+		for (i = 0; i < 80; i = i + 1)
+			memory_array[i] = 4;
+		for (i = 80*59; i < 80*60; i = i + 1)
+			memory_array[i] = 4;
+		for (i = 0; i < 80*60; i = i + 80)
+			memory_array[i] = 4;
+		for (i = 79; i < 80*60; i = i + 80)
+			memory_array[i] = 4;
 		
         end
     end
