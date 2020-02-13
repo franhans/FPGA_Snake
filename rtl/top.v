@@ -1,5 +1,5 @@
-`default_nettype none   
-`define __ICARUS__ 0
+
+//`define __ICARUS__ 0
 
 module top (
     input wire clk,	      // 25MHz clock input
@@ -79,7 +79,7 @@ module top (
 	wire [11:0] RGB;
 
 	snake sn1 (
-   		.clk(clk),			// 25MHz clock input
+   		//.clk(clk),			// 25MHz clock input
    		.px_clk(px_clk),		// 31MHz clock input
    		.rstn(RSTN2),				// rstn,
        		.dataRX(dataRX),		// Tx from the computer

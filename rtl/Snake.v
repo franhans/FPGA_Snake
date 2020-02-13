@@ -1,5 +1,5 @@
 module snake (
-    input clk,	              // 25MHz clock input
+    //input clk,	              // 25MHz clock input
     input px_clk,	      // 31MHz clock input
     input rstn,               // rstn,
     input [7:0] dataRX,       // Tx from the computer
@@ -177,50 +177,53 @@ module snake (
 	end
     end
 
-
+    wire [6:0] savedPositionX;
+    wire [6:0] savedPositionY;
+    assign savedPositionX = o_dataFIFO[8:2];
+    assign savedPositionY = o_dataFIFO[15:9];
     always @(*) begin
-	n_Fstate <= Fstate;
-	readFIFO <= 0;
-	writeFIFO <= 0;
-	n_beginDir <= 0;
-	n_i_dataFIFO <= 0;
+	n_Fstate = Fstate;
+	readFIFO = 0;
+	writeFIFO = 0;
+	n_beginDir = 0;
+	n_i_dataFIFO = 0;
 	case (Fstate)
 		2'b00: begin
-			if (!FIFOisEmpty && finalX == o_dataFIFO[8:2] && finalY == o_dataFIFO[15:9]) begin
-				n_Fstate <= 2'b01;
-				readFIFO <= 1;
+			if ((!FIFOisEmpty) && (finalX == savedPositionX) &&  (finalY == savedPositionY)) begin
+				n_Fstate = 2'b01;
+				readFIFO = 0;
 			end
 			else if (wr_f2 && regDataRX >= 65 && regDataRX <= 68 && prevRegData != regDataRX) begin
-				n_Fstate <= 2'b10;
+				n_Fstate = 2'b10;
 				case (regDataRX) 
 			  		65: begin
-					n_i_dataFIFO <= {beginY, beginX, up};
-					n_beginDir <= up;
+					n_i_dataFIFO = {beginY, beginX, up};
+					n_beginDir = up;
 			      		end
 			  		66: begin
-					n_i_dataFIFO <= {beginY, beginX, down};
-					n_beginDir <= down;
+					n_i_dataFIFO = {beginY, beginX, down};
+					n_beginDir = down;
 			     		 end
 					67: begin
-					n_i_dataFIFO <= {beginY, beginX, right};
-					n_beginDir <= right;
+					n_i_dataFIFO = {beginY, beginX, right};
+					n_beginDir = right;
 			      		end
 			  		68: begin
-					n_i_dataFIFO <= {beginY, beginX, left};
-					n_beginDir <= left;
+					n_i_dataFIFO = {beginY, beginX, left};
+					n_beginDir = left;
 			      		end
 				endcase
 			end
 		       end
 		2'b01: begin
-			n_Fstate <= 2'b00;
-			readFIFO <= 0;
-			writeFIFO <= 0;
+			n_Fstate = 2'b00;
+			readFIFO = 1;
+			writeFIFO = 0;
 		       end
 		2'b10: begin
-			n_Fstate <= 2'b00;
-			readFIFO <= 0;
-			writeFIFO <= 1;
+			n_Fstate = 2'b00;
+			readFIFO = 0;
+			writeFIFO = 1;
 		       end
 	endcase
 	
@@ -277,7 +280,7 @@ module snake (
 
    //sprites ram signals
    wire [8:0] sprite_addr; 
-   reg sprite_write = 0, sprite_data_i; 
+   reg sprite_write = 0; 
    wire sprite_data_o;
 
 
@@ -285,14 +288,14 @@ module snake (
    sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
 	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o));
 
-   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(sprite_write), .i_data(sprite_data_i), .o_data(sprite_data_o));
+   sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(1'b0), .i_data(1'b0), .o_data(sprite_data_o));
 
 
    wire [2:0] SpriteIndex;
    reg [6:0] gridPositionX = 0;
    reg [6:0] gridPositionY = 0;
    reg [6:0] gridPositionXmem = 0;
-   reg [6:0] gridPositionYmem = 0;
+   //reg [6:0] gridPositionYmem = 0;
 
    
     reg frameEnded = 0;
@@ -320,28 +323,28 @@ module snake (
 
     always @( posedge px_clk) if (!rstn) Wstate <= 0; else Wstate <=  n_Wstate;
     always @(*) begin
-	n_Wstate <= Wstate;
+	n_Wstate = Wstate;
 	case (Wstate)
 		2'b00: begin
-			frame_write <= 0;
-			updateBegin <= 0;
+			frame_write = 0;
+			updateBegin = 0;
 			if (frameEnded) 
-				n_Wstate <= 2'b01;
+				n_Wstate = 2'b01;
 			end
 		2'b01: begin
-			frame_write <= 1;
-			updateBegin <= 0;
-			n_Wstate <= 2'b10;
+			frame_write = 1;
+			updateBegin = 0;
+			n_Wstate = 2'b10;
 			end
 		2'b10: begin
-			frame_write <= 0;
-			updateBegin <= 0;
-			n_Wstate <= 2'b11;
+			frame_write = 0;
+			updateBegin = 0;
+			n_Wstate = 2'b11;
 			end
 		2'b11: begin
-			frame_write <= 1;
-			updateBegin <= 1;		
-			n_Wstate <= 2'b00;
+			frame_write = 1;
+			updateBegin = 1;		
+			n_Wstate = 2'b00;
 			end
 	endcase
 	
@@ -462,7 +465,7 @@ module snake (
 		gridPositionX <= 0;
 		gridPositionY <= 0;
 		gridPositionXmem <= 0;
-		gridPositionYmem <= 0;
+		//gridPositionYmem <= 0;
 	end
 	else begin
 		if (n_x_px[2:0] == 3'b000 || n_y_px[2:0] == 3'b000) begin
@@ -471,7 +474,7 @@ module snake (
 		end
 		if (n2_x_px[2:0] == 3'b000 || n2_y_px[2:0] == 3'b000) begin
 			gridPositionXmem <= n2_x_px[9:3];
-			gridPositionYmem <= n2_y_px[9:3];
+			//gridPositionYmem <= n2_y_px[9:3];
 		end
 	end 
    end

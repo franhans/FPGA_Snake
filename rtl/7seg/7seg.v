@@ -11,11 +11,12 @@ module sevenSeg(
 	wire [3:0] hundreds, tens, ones;
 
 	always @(posedge clk) begin
-		count <= count + 1;
 		if (count[17]) begin
 			count <= 0;
 			ca_count <= (ca_count == 2) ? ca_count <= 0 :ca_count + 1;
 		end
+		else 
+			count <= count + 1;
 	end
 
 	assign ca = (ca_count == 0) ? 3'b110 :

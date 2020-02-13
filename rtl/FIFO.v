@@ -20,17 +20,17 @@ module FIFO #(parameter DATA_WIDTH=16, DEPTH=64) (
 		read_pointer <= 0;
 	end 
 	else begin
-		if (write == 1) begin
+		if (write) begin
 			memory_array[write_pointer] <= i_data;
 			write_pointer <= write_pointer + 1;
 		end
-		if (read == 1) begin
+		if (read && !isEmpty) begin
 			read_pointer <= read_pointer + 1;
 		end
 	end
     end
 
-    assign o_data = memory_array[read_pointer];
+    assign o_data = (!isEmpty) ? memory_array[read_pointer] : 0;
 
     assign isEmpty = (write_pointer == read_pointer) ? 1 : 0;
 

@@ -69,34 +69,34 @@ end
 
 //State machine
 always @(state or baudSync or dataCounter or rx or data) begin
-	o_wr <= 0;
-	next_state <= state;
-	next_data <= data;
+	o_wr = 0;
+	next_state = state;
+	next_data = data;
 	case (state)
 		IDLE: begin
 			if (!rx) 
-				next_state <= START;
+				next_state = START;
 			end
 		START: begin
 			if (baudSync == clocksPerBaud-1)
-				next_state <= DATA;
+				next_state = DATA;
 			end
 		DATA: begin
 			if (baudSync == clocksPerBaud/2-1)
-				next_data <= {rx, data[7:1]};
+				next_data = {rx, data[7:1]};
 			if (dataCounter == 7 && baudSync == clocksPerBaud-1)
 				if (if_parity)
-					next_state <= PARITY;
+					next_state = PARITY;
 				else 
-					next_state <= STOP;
+					next_state = STOP;
 			end
 		PARITY: begin
-				next_state <= STOP;
+				next_state = STOP;
 			end
 		STOP: begin
-			o_wr <= 1;
+			o_wr = 1;
 			if (baudSync == clocksPerBaud/2-1)
-				next_state <= IDLE;
+				next_state = IDLE;
 			end
 	endcase
 end
