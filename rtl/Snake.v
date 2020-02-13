@@ -233,40 +233,6 @@ module snake (
 
 
 
-/*
-		if (!lastValidReg[8] && finalX == segmentsReg[lastValidReg][11:2] && finalY == segmentsReg[lastValidReg][21:12]) begin
-			segmentsReg[lastValidReg] <= 0;
-			if (!(&lastValidReg)) begin 
-					finalDir <= segmentsReg[lastValidReg][1:0];
-			end
-		end
-		else if (wr_f2 && regDataRX >= 65 && regDataRX <= 68 && prevRegData != regDataRX) begin  
-			prevRegData <= regDataRX;
-			case (regDataRX) 
-			  65: begin
-				segmentsReg [0] <= {beginY, beginX, up};
-				beginDir <= up;
-			      end
-			  66: begin
-				segmentsReg [0] <= {beginY, beginX, down};
-				beginDir <= down;
-			      end
-			  67: begin
-				segmentsReg [0] <= {beginY, beginX, right};
-				beginDir <= right;
-			      end
-			  68: begin
-				segmentsReg [0] <= {beginY, beginX, left};
-				beginDir <= left;
-			      end
-			endcase
-
-			for (i = 1; i <= maxTwists; i = i + 1) 
-				segmentsReg[i] <= segmentsReg[i-1];
-		end 
-
-	end
-    end		*/
 
 
  //----------------------------
@@ -274,7 +240,7 @@ module snake (
  //----------------------------
    //frame ram signals
    wire [12:0] frame_addr; 
-   reg frame_write; 
+   reg [1:0] frame_write; 
    wire  [2:0] frame_data_i;
    wire [2:0] frame_data_o;
 
@@ -286,7 +252,7 @@ module snake (
 
 
    sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
-	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write), .i_data(frame_data_i), .o_data(frame_data_o));
+	ramFrame (.i_clk(px_clk), .i_addr(frame_addr), .i_write(frame_write[0]), .i_data(frame_data_i), .o_data(frame_data_o));
 
    sram ramSprites(.i_clk(px_clk), .i_addr(sprite_addr), .i_write(1'b0), .i_data(1'b0), .o_data(sprite_data_o));
 
@@ -313,10 +279,23 @@ module snake (
     reg updateBegin;
     wire [12:0] memory_position_write;
 
+    wire [12:0] collision_position;
+
     reg [2:0] beginSprite;
     reg [2:0] finalSprite;
 
-    always @(posedge px_clk) frameEnded <= (x_px == 639) & (y_px == 479);
+    reg collision, n_collision;
+
+    always @(posedge px_clk) begin
+	if (!rstn) begin
+		collision <= 0;
+		frameEnded <= 0;
+	end
+	else begin
+		frameEnded <= (x_px == 639) & (y_px == 479);
+		collision <= n_collision;
+	end
+    end
 
 
     
@@ -324,24 +303,27 @@ module snake (
     always @( posedge px_clk) if (!rstn) Wstate <= 0; else Wstate <=  n_Wstate;
     always @(*) begin
 	n_Wstate = Wstate;
+	n_collision = 0;
 	case (Wstate)
 		2'b00: begin
-			frame_write = 0;
+			frame_write = 2'b00;
 			updateBegin = 0;
 			if (frameEnded) 
 				n_Wstate = 2'b01;
 			end
 		2'b01: begin
-			frame_write = 1;
+			frame_write = 2'b01;
 			updateBegin = 0;
 			n_Wstate = 2'b10;
 			end
 		2'b10: begin
-			frame_write = 0;
-			updateBegin = 0;
+			frame_write = 2'b10;
+			updateBegin = 1;
 			n_Wstate = 2'b11;
 			end
 		2'b11: begin
+			if (SpriteIndex == 4 && framesCounter == 7)
+				n_collision = 1;
 			frame_write = 1;
 			updateBegin = 1;		
 			n_Wstate = 2'b00;
@@ -357,6 +339,9 @@ module snake (
 
     assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;
 
+    assign collision_position = (beginDir == right) ? beginY * 80 + beginX + 1:
+				(beginDir == left ) ? beginY * 80 + beginX - 1:
+				(beginDir == up   ) ? (beginY - 1) * 80 + beginX : (beginY + 1) * 80 + beginX; 
 
 
     
@@ -396,37 +381,29 @@ module snake (
 				case (beginDir)
 			  	  right: begin 
 					 beginX <= beginX + 1;
-					 //beginRotation <= 0;
 					 end 
 			  	  left : begin 
 					  beginX <= beginX - 1;
-					  //beginRotation <= 1;
 					 end 
 			   	  up   : begin 
 					  beginY <= beginY - 1;	
-					  //beginRotation <= 2;
 					 end
 			   	  down : begin
 					  beginY <= beginY + 1;
-					  //beginRotation <= 3;
 					 end
 				endcase
 				case (finalDir)
 			  	  right: begin 
 					 finalX <= finalX + 1;
-					 //finalRotation <= 1;
 					 end 
 			  	  left : begin 
 					  finalX <= finalX - 1;
-					  //finalRotation <= 0;
 					 end 
 			   	  up   : begin 
 					  finalY <= finalY - 1;	
-					  //finalRotation <= 3;
 					 end
 			   	  down : begin
 					  finalY <= finalY + 1;
-					  //finalRotation <= 2;
 					 end
 				endcase
 			end
@@ -447,7 +424,8 @@ module snake (
  //-------------------------------------
  //   Drawing and collition management
  //-------------------------------------
-
+   reg [1:0] flowState, n_flowState;
+   reg reboot;
 
    wire [9:0] n_x_px, n_y_px;
    assign n_x_px = (x_px == 639) ? 0 : x_px + 1; 
@@ -480,7 +458,9 @@ module snake (
    end
 
 
-   assign frame_addr = (!frame_write) ? Vwidth/8 * gridPositionY + gridPositionXmem : memory_position_write;
+   assign frame_addr = (frame_write == 2'b00) ? Vwidth/8 * gridPositionY + gridPositionXmem : 
+			(frame_write == 2'b01) ? memory_position_write : collision_position;
+
    assign SpriteIndex = frame_data_o;
 
    assign sprite_addr = (rotation == 0) ? SpriteIndex * bitsPerSprite + (y_px - {gridPositionY, 3'b000}) * SpriteSIZE + (x_px - {gridPositionX, 3'b000}) :         //0º
@@ -495,13 +475,47 @@ module snake (
                 G_int <= 4'b0;
                 B_int <= 4'b0;
         end else
-        if (activevideo) begin
+        if (activevideo && !reboot) begin
 		G_int <= {sprite_data_o, 3'b000};
        	end
 	else 
 		G_int <= 4'b0000;
     end
 
+
+
+
+
+
+
+
+
+ //-------------------------------------
+ //           Game Flow
+ //-------------------------------------
+
+
+
+    always @( posedge px_clk) if (!rstn) flowState <= 0; else flowState <=  n_flowState;
+    always @(*) begin
+	n_flowState = flowState;
+	reboot = 0;
+	case (flowState)
+		2'b00: begin
+			if (collision) 
+				n_flowState = 2'b01;
+			end
+		2'b01: begin
+			if (frameEnded)
+				n_flowState = 2'b10;
+			end
+		2'b10: begin
+			reboot = 1;
+			end
+	endcase
+	
+    end
+    
 
 
 
