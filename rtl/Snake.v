@@ -102,6 +102,8 @@ module snake (
     reg [1:0] finalDir = right;
     reg [1:0] beginDir = right;
     reg [1:0] n_beginDir;
+    wire [6:0] finalActualizationX;
+    wire [6:0] finalActualizationY;
 
     
     //local signals for UART
@@ -279,6 +281,8 @@ module snake (
     wire [12:0] memory_position_write;
 
     wire [12:0] collision_position;
+    reg activeFoodCollision;
+    reg foodCollision;
 
     reg [2:0] beginSprite;
     reg [2:0] finalSprite;
@@ -305,6 +309,7 @@ module snake (
 	n_collision = 0;
 	frame_write = 0;
 	updateBegin = 0;
+        activeFoodCollision = 0;
 	case (Wstate)
 		3'b000: begin                           //detects that the frame is over
 			 frame_write = 3'b000;
@@ -318,9 +323,12 @@ module snake (
 			 n_Wstate = 3'b010;
 			end
 		3'b010: begin				//write the position of the final of the snake
-			 if (SpriteIndex != 7) begin
+			 if (SpriteIndex != 5) begin
 				frame_write = 2'b01;
 				updateBegin = 0;
+			 end 
+			 else begin
+				activeFoodCollision = 1;
 			 end
 			 n_Wstate = 3'b011;
 			end
@@ -400,7 +408,7 @@ module snake (
 					  beginY <= beginY + 1;
 					 end
 				endcase
-				case (finalDir)
+				/*case (finalDir)
 			  	  right: begin 
 					 finalX <= finalX + 1;
 					 end 
@@ -413,7 +421,9 @@ module snake (
 			   	  down : begin
 					  finalY <= finalY + 1;
 					 end
-				endcase
+				endcase*/
+				finalX <= finalX + finalActualizationX;
+				finalY <= finalY + finalActualizationY;
 			end
 		end
 	end
@@ -426,6 +436,16 @@ module snake (
     assign finalRotation = (finalDir == right) ? 1:
                            (finalDir == left ) ? 0:
                            (finalDir == up   ) ? 3: 2;
+
+    assign finalActualizationX = (finalDir == right && !foodCollision) ?  1 :
+				 (finalDir == left  && !foodCollision) ? -1 :
+				 (finalDir == right && foodCollision ) ? -1 :
+				 (finalDir == left  && foodCollision ) ?  1 : 0;
+
+    assign finalActualizationY = (finalDir == up   && !foodCollision) ? -1 :
+				 (finalDir == down && !foodCollision) ?  1 :
+				 (finalDir == up   && foodCollision ) ?  1 :
+				 (finalDir == down && foodCollision ) ? -1 : 0;
  
 
 
@@ -508,10 +528,14 @@ module snake (
     always @(*) begin
 	n_flowState = flowState;
 	reboot = 0;
+	foodCollision = 0;
 	case (flowState)
 		2'b00: begin
-			if (collision) 
+			if (activeFoodCollision)
+				n_flowState = 2'b11;
+			else if (collision) 
 				n_flowState = 2'b01;
+
 			end
 		2'b01: begin
 			if (frameEnded)
@@ -520,6 +544,11 @@ module snake (
 		2'b10: begin
 			reboot = 1;
 			end
+		2'b11: begin
+			foodCollision = 1;
+			if (framesCounter == 1)
+				n_flowState = 02'b00;
+		      end 
 	endcase
 	
     end
