@@ -150,7 +150,22 @@ module snake (
    assign n_foodCounter = (foodCounter > 4700) ? 81 :
 			  (foodCounter[3:0] == 4'b1110) ? foodCounter + 3: foodCounter + countIncrement;
 
+ //-------------------------------------
+ //           Game Reset
+ //-------------------------------------
+   reg active_reset;
+   reg [12:0] frameCopy_addr;
+   wire [2:0] frameCopy_data_o;
+   reg programRST = 1;
 
+   sram #(.ADDR_WIDTH(13), .DATA_WIDTH(3), .DEPTH(4800), .INIT(0)) 
+	ramFrameCopy (.i_clk(px_clk), .i_addr(frameCopy_addr), .i_write(0), .i_data(0), .o_data(frameCopy_data_o));
+
+   reg [12:0] resetCounter;
+   wire [12:0] n_resetCounter;
+   always @(posedge px_clk) resetCounter <= n_resetCounter;
+   
+   assign n_resetCounter = (!active_reset) ? 0 : resetCounter + 1;
     
     //--------------------------------------------------------------------------------------
     //    Register with positions and directions of the different segments of the snake
@@ -171,12 +186,12 @@ module snake (
     reg [1:0] n_Fstate;
    
     FIFO #(.DATA_WIDTH(16), .DEPTH(64)) 
-    	FIFO1 (.clk(px_clk), .rstn(rstn), .write(writeFIFO), .read(readFIFO), .i_data(i_dataFIFO), .o_data(o_dataFIFO), .isEmpty(FIFOisEmpty ));
+    	FIFO1 (.clk(px_clk), .rstn(!programRST), .write(writeFIFO), .read(readFIFO), .i_data(i_dataFIFO), .o_data(o_dataFIFO), .isEmpty(FIFOisEmpty ));
 
 
 //  reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
     always @(posedge px_clk) begin
-    	if (!rstn) begin
+    	if (!rstn || programRST) begin
 		finalDir <= right;
     		beginDir <= right;
 		prevRegData <= 67;
@@ -294,7 +309,7 @@ module snake (
     reg  [2:0] Wstate = 3'b000;
     reg [2:0] n_Wstate;
 
-    reg [1:0] updateBegin;
+    reg [2:0] updateBegin;
     wire [12:0] memory_position_write;
 
     wire [12:0] collision_position;
@@ -307,7 +322,7 @@ module snake (
     reg collision, n_collision;
 
     always @(posedge px_clk) begin
-	if (!rstn) begin
+	if (!rstn || programRST) begin
 		collision <= 0;
 		frameEnded <= 0;
 		pointCounter <= 0;
@@ -331,12 +346,16 @@ module snake (
 	updateBegin = 0;
         activeFoodCollision = 0;
 	countIncrement = 1;
+	frameCopy_addr = 0;
+        programRST = 0;
 	case (Wstate)
 		3'b000: begin                           //detects that the frame is over
 			 frame_write = 3'b000;
 			 updateBegin = 0;
 			 if (frameEnded) 
 				n_Wstate = 3'b001;
+			 if (active_reset)
+				n_Wstate = 3'b111;
 			end
 		3'b001: begin				//looks for a collision with the food
 			 frame_write = 3'b010;
@@ -385,11 +404,26 @@ module snake (
 			 n_Wstate = 3'b110;
 			end
 		3'b110: begin				//write the position of the begining of the snake and triggers the flow state machine if there is a collision
-			 if (SpriteIndex == 4 && framesCounter == 7)
+			 if (SpriteIndex == 4 && framesCounter == 7) begin
 				n_collision = 1;
+				n_Wstate = 3'b111;
+			 end
 			 frame_write = 1;
 			 updateBegin = 1;		
 			 n_Wstate = 3'b00;
+			end
+		3'b111: begin				//Handels the reset of the ram
+			 if (resetCounter == 1)
+				frameCopy_addr = 0;
+			 else if (resetCounter <= 4800) begin
+				frameCopy_addr = resetCounter - 1;
+				frame_write = 3'b001;
+				updateBegin = 4;
+			 end 
+			 else if (resetCounter <= 4820)
+				programRST = 1;
+			 else
+				n_Wstate = 3'b000;
 			end
 	endcase
 	
@@ -397,10 +431,12 @@ module snake (
     
 
 
-    assign memory_position_write = (updateBegin == 1) ? beginY * 80 + beginX : finalY * 80 + finalX;
+    assign memory_position_write = (updateBegin == 1) ? beginY * 80 + beginX : 
+				   (updateBegin == 4) ? resetCounter -2: finalY * 80 + finalX;
     assign frame_data_i = (updateBegin == 1) ? beginSprite : 
 			  (updateBegin == 0) ? finalSprite :  
-			  (updateBegin == 2) ? 5 : 4;
+			  (updateBegin == 2) ? 5 :
+			  (updateBegin == 3) ? 4 : frameCopy_data_o;
 
     assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;
 
@@ -412,7 +448,7 @@ module snake (
     
 
     always @(posedge px_clk) begin 
-	if (!rstn) begin
+	if (!rstn || programRST) begin
 		beginX <= initialPositionBeginX;
     		finalX <= initialPositionFinalX;
     		beginY <= initialPositionBeginY;
@@ -489,7 +525,6 @@ module snake (
  //   Drawing and collition management
  //-------------------------------------
    reg [1:0] flowState, n_flowState;
-   reg reboot;
 
    wire [9:0] n_x_px, n_y_px;
    assign n_x_px = (x_px == 639) ? 0 : x_px + 1; 
@@ -503,7 +538,7 @@ module snake (
                     (y_px == 479) ? 0 : y_px + 1;// creo que no es necesario
 
    always @(posedge px_clk) begin
-	if (!rstn) begin
+	if (!rstn  || programRST) begin
 		gridPositionX <= 0;
 		gridPositionY <= 0;
 		gridPositionXmem <= 0;
@@ -540,7 +575,7 @@ module snake (
                 G_int <= 4'b0;
                 B_int <= 4'b0;
         end else
-        if (activevideo && !reboot) begin
+        if (activevideo & !active_reset) begin
 		G_int <= {sprite_data_o, 3'b000};
        	end
 	else 
@@ -564,7 +599,7 @@ module snake (
     always @( posedge px_clk) if (!rstn) flowState <= 0; else flowState <=  n_flowState;
     always @(*) begin
 	n_flowState = flowState;
-	reboot = 0;
+	active_reset = 0;
 	foodCollision = 0;
 	case (flowState)
 		2'b00: begin
@@ -579,7 +614,9 @@ module snake (
 				n_flowState = 2'b10;
 			end
 		2'b10: begin
-			reboot = 1;
+			active_reset = 1;
+			if (resetCounter == 4821)
+				n_flowState = 2'b00;
 			end
 		2'b11: begin
 			foodCollision = 1;
