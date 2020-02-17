@@ -113,7 +113,7 @@ module snake (
     wire wr_f;
     reg  wr_f2 = 0;
     reg [7:0] regDataRX = 0;
-    reg [7:0] prevRegData = 0;
+    reg [7:0] prevRegData = 67;
 
     //flank detector and register for the data from the UART
     always @(posedge px_clk) begin
@@ -179,7 +179,7 @@ module snake (
     	if (!rstn) begin
 		finalDir <= right;
     		beginDir <= right;
-		prevRegData <= 0;
+		prevRegData <= 67;
 		Fstate <= 0;
 	end
 	else begin
@@ -212,7 +212,7 @@ module snake (
 				n_Fstate = 2'b01;
 				readFIFO = 0;
 			end
-			else if (wr_f2 && regDataRX >= 65 && regDataRX <= 68 && prevRegData != regDataRX) begin
+			else if (wr_f2 && (((prevRegData != 67 && prevRegData != 68) && (regDataRX == 67 || regDataRX == 68)) || ((prevRegData != 65 && prevRegData != 66) && (regDataRX == 66 || regDataRX == 65))) ) begin
 				n_Fstate = 2'b10;
 				case (regDataRX) 
 			  		65: begin
