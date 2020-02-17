@@ -1,5 +1,5 @@
 module sevenSeg(
-	input wire  [7:0] binary,
+	input wire  [9:0] binary,
 	input wire        clk,
 	output wire [6:0] seg,
 	output wire [2:0] ca

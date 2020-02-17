@@ -7,7 +7,8 @@ module snake (
     input [9:0] x_px,         // x pixel postition
     input [9:0] y_px,         // y pixel position
     input activevideo,        // activevideo is 1 when x_px and y_px are in the visible zone of the screen.
-    output wire [11:0] RGB   // Led outputs
+    output [9:0] points,
+    output [11:0] RGB   // Led outputs
   );
   
 
@@ -134,12 +135,28 @@ module snake (
     assign wr_f = (WR_RX & ~wr2);  // wr_f is 1 during one clock cycle only. wr_f1 it's the same but with one cycle delayed.
 
 
-    integer i; //variable for loops
+
+ //-------------------------------------
+ //       Food random generator
+ //-------------------------------------
+   
+   reg [9:0] pointCounter = 0;
+   reg [9:0] n_pointCounter;
+   reg [12:0] foodCounter;
+   wire [12:0] n_foodCounter;
+   reg [12:0] countIncrement;
+   always @(posedge px_clk) if (!rstn) foodCounter <= 0; else foodCounter <= n_foodCounter;
+   
+   assign n_foodCounter = (foodCounter > 4700) ? 81 :
+			  (foodCounter[3:0] == 4'b1110) ? foodCounter + 3: foodCounter + countIncrement;
+
 
     
     //--------------------------------------------------------------------------------------
     //    Register with positions and directions of the different segments of the snake
     //--------------------------------------------------------------------------------------
+
+    integer i; //variable for loops
 
     reg writeFIFO;
     reg readFIFO;
@@ -242,7 +259,7 @@ module snake (
  //----------------------------
    //frame ram signals
    wire [12:0] frame_addr; 
-   reg [1:0] frame_write; 
+   reg [2:0] frame_write; 
    wire  [2:0] frame_data_i;
    wire [2:0] frame_data_o;
 
@@ -277,7 +294,7 @@ module snake (
     reg  [2:0] Wstate = 3'b000;
     reg [2:0] n_Wstate;
 
-    reg updateBegin;
+    reg [1:0] updateBegin;
     wire [12:0] memory_position_write;
 
     wire [12:0] collision_position;
@@ -293,23 +310,27 @@ module snake (
 	if (!rstn) begin
 		collision <= 0;
 		frameEnded <= 0;
+		pointCounter <= 0;
 	end
 	else begin
 		frameEnded <= (x_px == 639) & (y_px == 479);
 		collision <= n_collision;
+		pointCounter <= n_pointCounter;
 	end
     end
 
-
+    assign points = pointCounter;
     
 
     always @( posedge px_clk) if (!rstn) Wstate <= 0; else Wstate <=  n_Wstate;
     always @(*) begin
 	n_Wstate = Wstate;
+	n_pointCounter = pointCounter;
 	n_collision = 0;
 	frame_write = 0;
 	updateBegin = 0;
         activeFoodCollision = 0;
+	countIncrement = 1;
 	case (Wstate)
 		3'b000: begin                           //detects that the frame is over
 			 frame_write = 3'b000;
@@ -318,26 +339,52 @@ module snake (
 				n_Wstate = 3'b001;
 			end
 		3'b001: begin				//looks for a collision with the food
-			 frame_write = 3'b10;
+			 frame_write = 3'b010;
 			 updateBegin = 1;
 			 n_Wstate = 3'b010;
 			end
 		3'b010: begin				//write the position of the final of the snake
-			 if (SpriteIndex != 5) begin
-				frame_write = 2'b01;
+			 if (SpriteIndex != 5) begin //&& framesCounter == 0
+				frame_write = 3'b001;
 				updateBegin = 0;
+				n_Wstate = 3'b101;
+
+			 end 
+			 else if (SpriteIndex == 5 && framesCounter == 7) begin
+
+				n_Wstate = 3'b011;
+				activeFoodCollision = 1;
+			 end else 
+			 begin
+				updateBegin = 2'b11;
+				frame_write = 3'b001;
+				n_Wstate = 3'b101;
+			end
+		       end
+		3'b011: begin				//Read the memory of the spot to place the food, if it is already bussy, it changes the position.
+			 frame_write = 3'b100;
+			 updateBegin = 2'b00;
+			 n_Wstate = 3'b100;
+			 countIncrement = 0;
+			end
+		3'b100: begin				//Draw a new food and increase puntuation
+			 if (SpriteIndex == 0) begin
+			 	frame_write = 3'b011;
+			 	updateBegin = 2'b10;
+			 	n_Wstate = 3'b101;
+				n_pointCounter = pointCounter +1;
 			 end 
 			 else begin
-				activeFoodCollision = 1;
+				countIncrement = 1000;
+				n_Wstate = 3'b011;
 			 end
-			 n_Wstate = 3'b011;
 			end
-		3'b011: begin				//looks for a collision with the snake itself
-			 frame_write = 2'b10;
-			 updateBegin = 1;
-			 n_Wstate = 3'b100;
+		3'b101: begin				//looks for a collision with the snake itself or the border
+			 frame_write = 3'b010;
+			 updateBegin = 2'b01;
+			 n_Wstate = 3'b110;
 			end
-		3'b100: begin				//write the position of the begining of the snake and triggers the flow state machine if there is a collision
+		3'b110: begin				//write the position of the begining of the snake and triggers the flow state machine if there is a collision
 			 if (SpriteIndex == 4 && framesCounter == 7)
 				n_collision = 1;
 			 frame_write = 1;
@@ -350,8 +397,10 @@ module snake (
     
 
 
-    assign memory_position_write = (updateBegin) ? beginY * 80 + beginX : finalY * 80 + finalX;
-    assign frame_data_i = (updateBegin) ? beginSprite : finalSprite;
+    assign memory_position_write = (updateBegin == 1) ? beginY * 80 + beginX : finalY * 80 + finalX;
+    assign frame_data_i = (updateBegin == 1) ? beginSprite : 
+			  (updateBegin == 0) ? finalSprite :  
+			  (updateBegin == 2) ? 5 : 4;
 
     assign rotation = (gridPositionX == beginX[6:0] && gridPositionY == beginY[6:0])  ? beginRotation : finalRotation;
 
@@ -408,20 +457,7 @@ module snake (
 					  beginY <= beginY + 1;
 					 end
 				endcase
-				/*case (finalDir)
-			  	  right: begin 
-					 finalX <= finalX + 1;
-					 end 
-			  	  left : begin 
-					  finalX <= finalX - 1;
-					 end 
-			   	  up   : begin 
-					  finalY <= finalY - 1;	
-					 end
-			   	  down : begin
-					  finalY <= finalY + 1;
-					 end
-				endcase*/
+
 				finalX <= finalX + finalActualizationX;
 				finalY <= finalY + finalActualizationY;
 			end
@@ -486,8 +522,9 @@ module snake (
    end
 
 
-   assign frame_addr = (frame_write == 2'b00) ? Vwidth/8 * gridPositionY + gridPositionXmem : 
-			(frame_write == 2'b01) ? memory_position_write : collision_position;
+   assign frame_addr = (frame_write == 3'b000) ? Vwidth/8 * gridPositionY + gridPositionXmem : 
+			(frame_write == 3'b001) ? memory_position_write : 
+                        (frame_write == 3'b010) ? collision_position : foodCounter;
 
    assign SpriteIndex = frame_data_o;
 
@@ -552,7 +589,9 @@ module snake (
 	endcase
 	
     end
-    
+
+
+
 
 
 

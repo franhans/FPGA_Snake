@@ -16,6 +16,7 @@ module top (
 	wire [9:0] x_px, y_px;
 	wire px_clk;
 	wire [7:0] dataRX;
+	wire [9:0] points;
 	wire WR_RX;
 
 	reg RSTN1;
@@ -70,7 +71,7 @@ module top (
 	//     7seg
 	sevenSeg S7 (
 		.clk(clk),		//Input
-		.binary(dataRX),	//Input 
+		.binary(points),	//Input 
 		.seg(seg), 		//Output
 		.ca(ca)			//Output
 	);
@@ -87,6 +88,7 @@ module top (
     		.x_px(x_px),			// x pixel postition
     		.y_px(y_px),			// y pixel position
     		.activevideo(activevideo),	// activevideo is 1 when x_px and y_px are in the visible zone of the screen.
+		.points(points),
   		.RGB(RGB)			// Led outputs
 	);
 
