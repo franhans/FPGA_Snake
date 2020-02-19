@@ -1,4 +1,4 @@
-`default_nettype none   
+
 //`define __ICARUS__ 0
 
 module top (
@@ -16,6 +16,7 @@ module top (
 	wire [9:0] x_px, y_px;
 	wire px_clk;
 	wire [7:0] dataRX;
+	wire [9:0] points;
 	wire WR_RX;
 
 	reg RSTN1;
@@ -70,7 +71,7 @@ module top (
 	//     7seg
 	sevenSeg S7 (
 		.clk(clk),		//Input
-		.binary(dataRX),	//Input 
+		.binary(points),	//Input 
 		.seg(seg), 		//Output
 		.ca(ca)			//Output
 	);
@@ -79,7 +80,7 @@ module top (
 	wire [11:0] RGB;
 
 	snake sn1 (
-   		.clk(clk),			// 25MHz clock input
+   		//.clk(clk),			// 25MHz clock input
    		.px_clk(px_clk),		// 31MHz clock input
    		.rstn(RSTN2),				// rstn,
        		.dataRX(dataRX),		// Tx from the computer
@@ -87,6 +88,7 @@ module top (
     		.x_px(x_px),			// x pixel postition
     		.y_px(y_px),			// y pixel position
     		.activevideo(activevideo),	// activevideo is 1 when x_px and y_px are in the visible zone of the screen.
+		.points(points),
   		.RGB(RGB)			// Led outputs
 	);
 

@@ -1,6 +1,6 @@
 module BinToBCD (
 // I/O Signal Definitions
-   input  [7:0] number,
+   input  [9:0] number,
    output reg [3:0] hundreds,
    output reg [3:0] tens,
    output reg [3:0] ones
@@ -14,7 +14,7 @@ module BinToBCD (
    begin
       // Clear previous number and store new number in shift register
       shift[19:8] = 0;
-      shift[7:0] = number;
+      shift[9:0] = number;
       
       // Loop eight times
       for (i=0; i<8; i=i+1) begin
