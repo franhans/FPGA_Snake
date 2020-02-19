@@ -29,7 +29,8 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=384, INIT = 1) (
 
     initial begin
     	if (INIT) begin
-    	
+    		for (i = 0; i < 384; i = i + 1)
+			memory_array[i] = 0;
 		for (i = 0; i < 64; i = i + 1)
 			memory_array[i] = 0;
 		for (i = 64; i < 128; i = i + 1)

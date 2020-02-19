@@ -269,9 +269,9 @@ module snake (
 
 
 
- //----------------------------
- //   Position actualization
- //----------------------------
+ //----------------------------------------------------
+ //   Position actualization and collision management
+ //----------------------------------------------------
    //frame ram signals
    wire [12:0] frame_addr; 
    reg [2:0] frame_write; 
@@ -295,6 +295,7 @@ module snake (
    reg [6:0] gridPositionX = 0;
    reg [6:0] gridPositionY = 0;
    reg [6:0] gridPositionXmem = 0;
+   reg [6:0] gridPositionYmem = 0;
    //reg [6:0] gridPositionYmem = 0;
 
    
@@ -521,37 +522,39 @@ module snake (
  
 
 
- //-------------------------------------
- //   Drawing and collition management
- //-------------------------------------
+ //--------------
+ //   Drawing 
+ //--------------
    reg [1:0] flowState, n_flowState;
+   reg [9:0] keepRow;
 
    wire [9:0] n_x_px, n_y_px;
-   assign n_x_px = (x_px == 639) ? 0 : x_px + 1; 
-   assign n_y_px = (x_px != 639) ? y_px :
-                   (y_px == 479) ? 0 : y_px + 1;//creo que no es necesario
+   assign n_x_px = (x_px != 639) ? x_px + 1 : 0;
 
-   wire [9:0] n2_x_px, n2_y_px;
-   assign n2_x_px = (x_px == 638) ? 0 : 
-		    (x_px == 639) ? 1 :x_px + 2; 
-   assign n2_y_px = (x_px <  638) ? y_px :
-                    (y_px == 479) ? 0 : y_px + 1;// creo que no es necesario
+   assign n_y_px = (x_px == 0) ? keepRow + 1 : y_px;
+
+
+   wire [9:0] n2_x_px;
+   assign n2_x_px = (x_px >= 638) ? 0 :x_px + 2; 
+
 
    always @(posedge px_clk) begin
 	if (!rstn  || programRST) begin
 		gridPositionX <= 0;
 		gridPositionY <= 0;
 		gridPositionXmem <= 0;
-		//gridPositionYmem <= 0;
+		gridPositionYmem <= 0;
+		keepRow <= 0;
 	end
-	else begin
+	else begin 
+		if (x_px == 639)
+			keepRow <= y_px;
 		if (n_x_px[2:0] == 3'b000 || n_y_px[2:0] == 3'b000) begin
 			gridPositionX <= n_x_px[9:3];
 			gridPositionY <= n_y_px[9:3];
 		end
-		if (n2_x_px[2:0] == 3'b000 || n2_y_px[2:0] == 3'b000) begin
+		if (n2_x_px[2:0] == 3'b000 || y_px[2:0] == 3'b000) begin
 			gridPositionXmem <= n2_x_px[9:3];
-			//gridPositionYmem <= n2_y_px[9:3];
 		end
 	end 
    end
