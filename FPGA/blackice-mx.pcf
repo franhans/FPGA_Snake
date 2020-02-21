@@ -48,7 +48,6 @@ set_io ca[1] 139 # ca1
 set_io ca[2] 138  # ca2
 
 
-
 #UART
 set_io rx 61
 #set_io tx 62
