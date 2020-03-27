@@ -19,7 +19,7 @@
 //
 //////////////////////////////////////////////////////////////////////////////////
 
-//`define __ICARUS__ 0
+`define __ICARUS__ 0
 
 module VgaSyncGen (
             input wire       clk,           // Input clock: 12MHz

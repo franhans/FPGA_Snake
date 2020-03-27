@@ -139,6 +139,8 @@ module snake (
  //-------------------------------------
  //       Food random generator
  //-------------------------------------
+
+  //A counter is in charge of "generate" a pseudorandom position in the memory to place the food.
    
    reg [9:0] pointCounter = 0;
    reg [9:0] n_pointCounter;
@@ -153,6 +155,13 @@ module snake (
  //-------------------------------------
  //           Game Reset
  //-------------------------------------
+   
+   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   // - A second frameRam memory is instanciated with the original configuration of the screen
+   // - When reset state is reached, content of the second memory will be copied into the main RAM memory.
+   // - To achive this a counter is needed.
+   ////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
    reg active_reset;
    reg [12:0] frameCopy_addr;
    wire [2:0] frameCopy_data_o;
@@ -184,12 +193,12 @@ module snake (
     //State machine for FIFO control varibales
     reg [1:0] Fstate = 0;
     reg [1:0] n_Fstate;
-   
+
+    // A FIFO register stores the swerve possitions of the Snake.   
     FIFO #(.DATA_WIDTH(16), .DEPTH(64)) 
     	FIFO1 (.clk(px_clk), .rstn(!programRST), .write(writeFIFO), .read(readFIFO), .i_data(i_dataFIFO), .o_data(o_dataFIFO), .isEmpty(FIFOisEmpty ));
 
 
-//  reg [21:0] segmentsReg [0:maxTwists];  //the snake can turn 71 times.  Yposition[21:12] + Xposition[11:2] + Direction[1:0] = 22 bits.
     always @(posedge px_clk) begin
     	if (!rstn || programRST) begin
 		finalDir <= right;
@@ -210,6 +219,8 @@ module snake (
 			
 	end
     end
+
+    //A finite machine state controlls the FIFO inputs in order to store and recover positions and directions.
 
     wire [6:0] savedPositionX;
     wire [6:0] savedPositionY;
@@ -306,7 +317,7 @@ module snake (
     wire [1:0] finalRotation;
 
 
-    //fsm to control the ram writing and the collision detection
+    //Frame memory sate machine controller.
     reg  [2:0] Wstate = 3'b000;
     reg [2:0] n_Wstate;
 
@@ -430,8 +441,9 @@ module snake (
 	
     end
     
-
-
+   
+    //  Memory_postion_write is a multiplexed signal which is itself multiplexed as well. Different processes during the game
+    //  will change the variable updateBegin and frame_write to control the input signals for ramFrame block. (More about this later).
     assign memory_position_write = (updateBegin == 1) ? beginY * 80 + beginX : 
 				   (updateBegin == 4) ? resetCounter -2: finalY * 80 + finalX;
     assign frame_data_i = (updateBegin == 1) ? beginSprite : 
@@ -447,6 +459,7 @@ module snake (
 
 
     
+    //every 2 frames, sprite is upload, every 8 frames, position is upload. (make snake go faster?)
 
     always @(posedge px_clk) begin 
 	if (!rstn || programRST) begin
@@ -502,6 +515,8 @@ module snake (
 	end
     end
 	
+    // head and tail may not have the same rotation, so rotattion must be different for both of them, and these signals
+    // are multiplexed using the signal rotation
     assign beginRotation = (beginDir == right) ? 0:
                            (beginDir == left ) ? 1:
                            (beginDir == up   ) ? 2: 3;
@@ -510,6 +525,8 @@ module snake (
                            (finalDir == left ) ? 0:
                            (finalDir == up   ) ? 3: 2;
 
+
+    // The position of the tail is changed every 4 frames, however, this change is different when the snake eat one piece of food.
     assign finalActualizationX = (finalDir == right && !foodCollision) ?  1 :
 				 (finalDir == left  && !foodCollision) ? -1 :
 				 (finalDir == right && foodCollision ) ? -1 :
@@ -537,6 +554,14 @@ module snake (
    wire [9:0] n2_x_px;
    assign n2_x_px = (x_px >= 638) ? 0 :x_px + 2; 
 
+   /////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   // - y_px and x_px are registered in a register when the grid is change.
+   // - Since it takes one cycle to store x_px and y_px in gridPosition, the next x_px is stored instead (n_px)
+   // - Since updating the output of the memory frame_data_o takes one additional cycle, gridPositionXmem is updated
+   //   using n2_x_px which is x_px two cycles ahead in time (x_px + 2)
+   // - When screen line has finished x_px > 639, x_px and y_px are equal to 0, so y_px must be stored in a register
+   //   in order to not to lose that information.
+   ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
    always @(posedge px_clk) begin
 	if (!rstn  || programRST) begin
@@ -559,7 +584,15 @@ module snake (
 	end 
    end
 
-
+   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   // - The input of the memory which stores the frame must be multiplexed because depending on the state of the game
+   //   different approaches are used. For example, in reset all memory possitions are overwrited while most of the time
+   //   the memory is being read to print the screen. At the end of every frame the position of the head and the position
+   //   of the tail are overwrite.   
+   // - Besides, the last bit of frame_write controlls frame memory write.
+   // - memory_position_write it is also multiplexed
+   //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+   
    assign frame_addr = (frame_write == 3'b000) ? Vwidth/8 * gridPositionY + gridPositionXmem : 
 			(frame_write == 3'b001) ? memory_position_write : 
                         (frame_write == 3'b010) ? collision_position : foodCounter;

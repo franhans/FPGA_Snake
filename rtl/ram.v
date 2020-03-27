@@ -22,7 +22,7 @@ module sram #(parameter ADDR_WIDTH=9, DATA_WIDTH=1, DEPTH=384, INIT = 1) (
 
     integer i;
 
-  
+   
     //-------------------------------------------
     //             RAM initialization
     //-------------------------------------------
